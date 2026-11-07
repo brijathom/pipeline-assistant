@@ -24,3 +24,26 @@ class PipelineMetricsResponse(BaseModel):
     successful_runs: int
     failed_runs: int
     in_progress_runs: int
+
+
+class PipelineJobStepResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    step_number: int
+    name: str
+    status: str
+    conclusion: str | None
+    started_at: datetime | None
+    completed_at: datetime | None
+
+
+class PipelineJobResponse(BaseModel):
+    id: int
+    github_job_id: int
+    name: str
+    status: str
+    conclusion: str | None
+    started_at: datetime | None
+    completed_at: datetime | None
+    steps: list[PipelineJobStepResponse]

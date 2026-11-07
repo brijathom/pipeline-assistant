@@ -1,13 +1,36 @@
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import PipelineRun
-from app.schemas import PipelineMetricsResponse
+from app.models import PipelineJob, PipelineJobStep, PipelineRun
+from app.schemas import PipelineJobResponse, PipelineJobStepResponse, PipelineMetricsResponse
 
 
 def find_run(session: Session, run_id: int) -> PipelineRun | None:
     """Find one stored attempt by its local primary key."""
     return session.get(PipelineRun, run_id)
+
+
+def list_run_jobs(session: Session, run_id: int) -> list[PipelineJobResponse]:
+    """Read one attempt's evidence in two queries, without per-job step lookups."""
+    jobs = list(session.scalars(
+        select(PipelineJob).where(PipelineJob.pipeline_run_id == run_id)
+        .order_by(PipelineJob.github_job_id, PipelineJob.id),
+    ))
+    if not jobs:
+        return []
+    steps_by_job: dict[int, list[PipelineJobStepResponse]] = {job.id: [] for job in jobs}
+    steps = session.scalars(
+        select(PipelineJobStep).where(PipelineJobStep.pipeline_job_id.in_(steps_by_job))
+        .order_by(PipelineJobStep.pipeline_job_id, PipelineJobStep.step_number),
+    )
+    for step in steps:
+        steps_by_job[step.pipeline_job_id].append(PipelineJobStepResponse.model_validate(step))
+    return [PipelineJobResponse(
+        id=job.id, github_job_id=job.github_job_id, name=job.name,
+        status=job.status, conclusion=job.conclusion,
+        started_at=job.started_at, completed_at=job.completed_at,
+        steps=steps_by_job[job.id],
+    ) for job in jobs]
 
 
 def list_runs(session: Session, limit: int, repository: str | None = None) -> list[PipelineRun]:

@@ -5,9 +5,9 @@ from sqlalchemy.orm import Session
 
 from app.database import get_session
 from app.models import PipelineRun
-from app.queries import find_run, list_runs
+from app.queries import find_run, list_run_jobs, list_runs
 from app.repositories import RepositoryName
-from app.schemas import PipelineRunResponse
+from app.schemas import PipelineJobResponse, PipelineRunResponse
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
@@ -30,3 +30,13 @@ def get_run(
     if run is None:
         raise HTTPException(status_code=404, detail="Pipeline run not found")
     return run
+
+
+@router.get("/{run_id}/jobs", response_model=list[PipelineJobResponse])
+def get_run_jobs(
+    run_id: Annotated[int, Path(gt=0, le=9_223_372_036_854_775_807)],
+    session: Annotated[Session, Depends(get_session)],
+) -> list[PipelineJobResponse]:
+    if find_run(session, run_id) is None:
+        raise HTTPException(status_code=404, detail="Pipeline run not found")
+    return list_run_jobs(session, run_id)

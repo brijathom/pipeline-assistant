@@ -1,4 +1,6 @@
 import type { PipelineRun } from '../api/runs'
+import { readable } from '../format'
+import { ResultBadge } from './ResultBadge'
 
 const createdDate = new Intl.DateTimeFormat('en-GB', {
   day: '2-digit',
@@ -13,30 +15,6 @@ const createdTime = new Intl.DateTimeFormat('en-GB', {
   hourCycle: 'h23',
   timeZone: 'UTC',
 })
-
-function readable(value: string): string {
-  const text = value.replaceAll('_', ' ')
-  return text.charAt(0).toUpperCase() + text.slice(1)
-}
-
-function ResultBadge({ conclusion }: { conclusion: string | null }) {
-  if (!conclusion) {
-    return <span className="text-slate-400" aria-label="No conclusion yet">—</span>
-  }
-
-  const tone = conclusion === 'success'
-    ? 'badge-success'
-    : conclusion === 'failure' || conclusion === 'timed_out'
-      ? 'badge-failure'
-      : 'badge-neutral'
-
-  return (
-    <span className={`badge ${tone}`}>
-      <span aria-hidden="true">{conclusion === 'success' ? '✓' : tone === 'badge-failure' ? '×' : '−'}</span>
-      {readable(conclusion)}
-    </span>
-  )
-}
 
 export function RunTable({ runs, onSelectRun }: { runs: PipelineRun[]; onSelectRun: (id: number) => void }) {
   return (

@@ -172,8 +172,8 @@ Jobs and steps store status, nullable conclusion, nullable start/completion
 timestamps, and ingestion time. Unknown source timestamps remain null. Foreign
 keys prevent orphaned evidence; deleting a local run cascades to its jobs and
 steps, while deleting a job removes its steps. These rules apply to local stored
-data. The job importer below populates this evidence; displaying it in the
-details panel is the next slice.
+data. The job importer below populates this evidence, and the run-details panel
+displays the stored jobs and steps for the selected attempt.
 
 SQLAlchemy uses synchronous sessions, intended to be supplied per request via
 `get_session`. Write operations must commit explicitly. Sessions close after use
@@ -215,13 +215,29 @@ stored attempt is missing, or HTTP 422 for invalid or out-of-range IDs.
 Details show the repository, GitHub run ID, attempt, status, conclusion, and
 available source timestamps in UTC. Missing timestamps remain unavailable;
 completion times and durations are not inferred. This is a stored snapshot;
-opening or refreshing details does not contact GitHub. Jobs and logs are not
-included yet.
+opening or refreshing details does not contact GitHub. The jobs section loads
+stored evidence independently; logs are not included yet.
 
 The panel has independent loading, retry, and not-found states. Failed refreshes
 retain cached details with a warning; a 404 hides them and is not automatically
 retried. Close the panel using its close button or Escape. The native dialog
 contains keyboard focus and returns it to the workflow button when closed.
+
+`GET /api/runs/{id}/jobs` returns a JSON array of stored jobs with nested steps.
+Jobs are ordered by GitHub job ID and steps by source step number, including
+numbering gaps. The response contains names, status, conclusion, source
+timestamps, local IDs, and GitHub job IDs; internal parent keys and ingestion
+metadata are omitted. A missing run returns HTTP 404; an existing run with no
+stored jobs returns an empty array. Two batch evidence queries keep database
+query count constant as the number of jobs grows, after the parent lookup.
+
+The panel highlights failed or timed-out steps and automatically expands jobs
+with a failure or failed steps. Successful jobs without failed steps start
+collapsed. Jobs with no steps and unknown timestamps have explicit empty states.
+"No stored jobs yet" does not distinguish an unimported attempt from an imported
+empty result. The jobs section has independent loading and retry states and
+retains cached evidence with a warning if a refresh fails. **Refresh details**
+reloads both run metadata and jobs; it does not trigger an import.
 
 ### Reliability metrics
 
@@ -316,8 +332,8 @@ this command does not delete records to mirror a shrinking response. Reported
 counts are records processed in this import, not newly inserted records.
 
 Job and step timestamps remain source values. Workflow completion times are not
-inferred from job completion times. The importer does not retrieve logs, and the
-details panel continues to show run metadata until job display is implemented.
+inferred from job completion times. The importer does not retrieve logs. Open
+the matching run in the dashboard to explore its stored jobs and steps.
 
 ## Test
 

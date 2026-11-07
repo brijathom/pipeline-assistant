@@ -1,19 +1,15 @@
 import { useEffect, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { fetchRun, RunNotFoundError } from '../api/runs'
-
-const timestamp = new Intl.DateTimeFormat('en-GB', {
-  dateStyle: 'medium', timeStyle: 'medium', timeZone: 'UTC',
-})
-
-function readable(value: string): string {
-  const text = value.replaceAll('_', ' ')
-  return text.charAt(0).toUpperCase() + text.slice(1)
-}
+import { readable } from '../format'
+import { RunJobs } from './RunJobs'
+import { SourceTime } from './SourceTime'
 
 export function RunDetails({ runId, onClose }: { runId: number; onClose: () => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null)
+  const queryClient = useQueryClient()
+  const jobsFetching = useIsFetching({ queryKey: ['run-jobs', runId], exact: true }) > 0
   const query = useQuery({
     queryKey: ['run', runId],
     queryFn: ({ signal }) => fetchRun(runId, signal),
@@ -80,15 +76,19 @@ export function RunDetails({ runId, onClose }: { runId: number; onClose: () => v
                     <div key={label} className="py-3">
                       <dt className="text-xs text-slate-500">{label}</dt>
                       <dd className="mt-1 text-sm text-slate-800">
-                        {value ? <time dateTime={value}>{timestamp.format(new Date(value))} UTC</time> : 'Not available'}
+                        <SourceTime value={value} />
                       </dd>
                     </div>
                   ))}
                 </dl>
                 <p className="mt-5 text-xs leading-5 text-slate-500">Stored snapshot. Missing timestamps are shown as unavailable.</p>
-                <button className="button mt-4" type="button" onClick={() => void query.refetch()} disabled={query.isFetching}>
-                  {query.isFetching ? 'Refreshing details…' : 'Refresh details'}
+                <button className="button mt-4" type="button" onClick={() => void Promise.all([
+                  query.refetch(),
+                  queryClient.refetchQueries({ queryKey: ['run-jobs', runId], exact: true }),
+                ])} disabled={query.isFetching || jobsFetching}>
+                  {query.isFetching || jobsFetching ? 'Refreshing details…' : 'Refresh details'}
                 </button>
+                <RunJobs runId={runId} />
               </>
             )}
           </>
