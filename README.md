@@ -6,7 +6,8 @@ An AI-assisted CI/CD reliability and investigation platform, starting with GitHu
 
 The backend exposes a health endpoint and interactive API documentation, with
 SQLAlchemy models and an Alembic migration for pipeline runs in PostgreSQL.
-GitHub integration, the runs API, the frontend, and AI investigations are planned.
+Fictional demo data and a read-only runs API are included.
+GitHub integration, the frontend, and AI investigations are planned.
 
 ## Backend setup
 
@@ -78,8 +79,8 @@ timestamp. Source timestamps use PostgreSQL `timestamp with time zone`;
 
 SQLAlchemy uses synchronous sessions, intended to be supplied per request via
 `get_session`. Write operations must commit explicitly. Sessions close after use
-and roll back uncommitted work. No endpoint uses the database yet, so `/health`
-still works without database configuration.
+and roll back uncommitted work. `/health` does not access the database and still
+works without database configuration.
 
 The database is bound only to localhost, on port 5432 by default. If that port is
 already in use, stop the conflicting service or configure a different host port
@@ -87,6 +88,23 @@ in both `.env` files. Data survives container restarts in
 a named Docker volume. From the repository root, `docker compose stop db` stops
 PostgreSQL without removing its data. Changing `.env` credentials does not change
 credentials inside an already initialized database volume.
+
+## Demo runs and runs API
+
+After migrating the local development database, run from `backend`:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.seed
+```
+
+This explicitly inserts three fictional runs (successful, failed, and in progress)
+for `demo/pipeline-assistant`. It never calls GitHub. Running it again preserves
+existing rows and inserts no duplicates. Seed data is not inserted at API startup.
+
+`GET /api/runs` returns a JSON array
+of runs ordered by creation time descending, then ID descending. `limit` defaults
+to 20 and accepts values from 1 to 100. Try `/api/runs?limit=2` or use `/docs`.
+Responses include source timestamps and results, but omit internal ingestion metadata.
 
 ## Test
 
@@ -96,7 +114,32 @@ From `backend`:
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-The API test uses an in-process HTTP client; no running server or credentials are required.
+Without `TEST_DATABASE_URL`, PostgreSQL integration tests are skipped; the health
+and configuration tests still run. API tests use an in-process HTTP client, so
+no running API server is needed.
+
+To run integration tests, start the dedicated disposable test database from the
+repository root:
+
+```powershell
+docker compose --profile test up -d --wait db-test
+```
+
+Then, from `backend`:
+
+```powershell
+$env:TEST_DATABASE_URL = "postgresql+psycopg://pipeline_test:local-test-only@127.0.0.1:5433/pipeline_assistant_test"
+.\.venv\Scripts\python.exe -m pytest
+```
+
+The fixture rejects URLs that do not match this dedicated local test database,
+applies Alembic migrations, and rolls back each test's data, including explicit
+session commits. The test database uses temporary storage and is separate from
+the persistent development database. Use `docker compose --profile test stop db-test`
+from the repository root when finished; its data is disposable.
+
+Tests cover empty results, deterministic ordering,
+the result limit, response serialization, invalid limits, and seed idempotency.
 
 ## Dependencies
 

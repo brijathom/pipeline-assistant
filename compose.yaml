@@ -15,5 +15,23 @@ services:
       timeout: 5s
       retries: 10
 
+  db-test:
+    image: postgres:17
+    profiles: ["test"]
+    environment:
+      # Disposable local test database only.
+      POSTGRES_USER: pipeline_test
+      POSTGRES_PASSWORD: local-test-only
+      POSTGRES_DB: pipeline_assistant_test
+    ports:
+      - "127.0.0.1:5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pipeline_test -d pipeline_assistant_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres_data:

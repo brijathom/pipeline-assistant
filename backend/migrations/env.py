@@ -6,6 +6,16 @@ from app import models  # noqa: F401 -- register models with Base.metadata
 target_metadata = Base.metadata
 
 
+def run_migrations(connection):
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+    )
+    with context.begin_transaction():
+        context.run_migrations()
+
+
 if context.is_offline_mode():
     context.configure(
         dialect_name="postgresql",
@@ -16,12 +26,9 @@ if context.is_offline_mode():
     with context.begin_transaction():
         context.run_migrations()
 else:
-    engine = get_engine()
-    with engine.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            compare_type=True,
-        )
-        with context.begin_transaction():
-            context.run_migrations()
+    supplied_connection = context.config.attributes.get("connection")
+    if supplied_connection is not None:
+        run_migrations(supplied_connection)
+    else:
+        with get_engine().connect() as connection:
+            run_migrations(connection)
