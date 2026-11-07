@@ -4,11 +4,13 @@ import { useQuery } from '@tanstack/react-query'
 import { fetchMetrics } from './api/metrics'
 import { fetchRuns, RUN_LIMIT } from './api/runs'
 import { MetricsCards } from './components/MetricsCards'
+import { RunDetails } from './components/RunDetails'
 import { RunTable } from './components/RunTable'
 
 export default function App() {
   const [repositoryInput, setRepositoryInput] = useState('')
   const [repository, setRepository] = useState<string | undefined>()
+  const [selectedRunId, setSelectedRunId] = useState<number | null>(null)
   const runsQuery = useQuery({
     queryKey: ['runs', { limit: RUN_LIMIT, repository }],
     queryFn: ({ signal }) => fetchRuns(signal, repository),
@@ -174,7 +176,7 @@ export default function App() {
             ) : runs ? (
               <>
                 {runsQuery.isError && <p className="refresh-warning" role="alert">Couldn’t refresh. Showing previously loaded runs.</p>}
-                <RunTable runs={runs} />
+                <RunTable runs={runs} onSelectRun={setSelectedRunId} />
               </>
             ) : null}
 
@@ -186,6 +188,7 @@ export default function App() {
 
         </main>
       </div>
+      {selectedRunId !== null && <RunDetails key={selectedRunId} runId={selectedRunId} onClose={() => setSelectedRunId(null)} />}
     </div>
   )
 }

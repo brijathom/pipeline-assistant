@@ -5,6 +5,11 @@ from app.models import PipelineRun
 from app.schemas import PipelineMetricsResponse
 
 
+def find_run(session: Session, run_id: int) -> PipelineRun | None:
+    """Find one stored attempt by its local primary key."""
+    return session.get(PipelineRun, run_id)
+
+
 def list_runs(session: Session, limit: int, repository: str | None = None) -> list[PipelineRun]:
     """Return at most limit runs, newest created_at first, then highest id."""
     statement = (

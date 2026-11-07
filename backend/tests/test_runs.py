@@ -61,3 +61,47 @@ def test_run_response_fields(runs_client: TestClient, db_session: Session) -> No
 @pytest.mark.parametrize("limit", ["0", "101", "-1", "abc"])
 def test_invalid_limit_returns_validation_error(runs_client: TestClient, limit: str) -> None:
     assert runs_client.get(f"/api/runs?limit={limit}").status_code == 422
+
+
+def test_run_details_match_stored_attempts(runs_client: TestClient, db_session: Session) -> None:
+    seed_runs(db_session)
+    rows = runs_client.get("/api/runs").json()
+    assert len(rows) == 3
+    for row in rows:
+        response = runs_client.get(f"/api/runs/{row['id']}")
+        assert response.status_code == 200
+        assert response.json() == row
+        assert "ingested_at" not in response.json()
+
+
+def test_run_details_distinguish_rerun_attempts(runs_client: TestClient, db_session: Session) -> None:
+    attempts = []
+    for attempt, conclusion in ((1, "failure"), (2, "success")):
+        run = PipelineRun(
+            repository="example/project", github_run_id=7000, run_attempt=attempt,
+            workflow_name="Build", status="completed", conclusion=conclusion,
+            created_at=datetime(2026, 11, 7, tzinfo=timezone.utc),
+        )
+        db_session.add(run)
+        db_session.flush()
+        attempts.append(run)
+
+    for run in attempts:
+        response = runs_client.get(f"/api/runs/{run.id}")
+        assert response.status_code == 200
+        assert response.json()["id"] == run.id
+        assert response.json()["github_run_id"] == 7000
+        assert response.json()["run_attempt"] == run.run_attempt
+        assert response.json()["conclusion"] == run.conclusion
+        assert response.json()["completed_at"] is None
+
+
+def test_missing_run_returns_not_found(runs_client: TestClient) -> None:
+    response = runs_client.get("/api/runs/9223372036854775807")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Pipeline run not found"}
+
+
+@pytest.mark.parametrize("run_id", ["0", "-1", "abc", "1.5", "9223372036854775808"])
+def test_invalid_run_id_returns_validation_error(runs_client: TestClient, run_id: str) -> None:
+    assert runs_client.get(f"/api/runs/{run_id}").status_code == 422

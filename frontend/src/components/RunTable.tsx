@@ -38,7 +38,7 @@ function ResultBadge({ conclusion }: { conclusion: string | null }) {
   )
 }
 
-export function RunTable({ runs }: { runs: PipelineRun[] }) {
+export function RunTable({ runs, onSelectRun }: { runs: PipelineRun[]; onSelectRun: (id: number) => void }) {
   return (
     <div className="overflow-x-auto">
       <table className="runs-table">
@@ -59,7 +59,13 @@ export function RunTable({ runs }: { runs: PipelineRun[] }) {
             return (
               <tr key={run.id}>
                 <td>
-                  <span className="block font-semibold text-slate-800">{run.workflow_name}</span>
+                  <button
+                    className="block text-left font-semibold text-indigo-700 underline decoration-indigo-200 underline-offset-4 hover:decoration-indigo-700"
+                    type="button"
+                    aria-haspopup="dialog"
+                    aria-label={`View details for ${run.workflow_name}, run ${run.github_run_id}, attempt ${run.run_attempt}`}
+                    onClick={() => onSelectRun(run.id)}
+                  >{run.workflow_name}</button>
                   <span className="mt-1 block text-xs text-slate-500">{run.repository}</span>
                   <div className="mt-2 space-y-1 text-[10px] text-slate-500 sm:hidden">
                     <span className="block">#{run.github_run_id} · Attempt {run.run_attempt} · {readable(run.status)}</span>

@@ -191,6 +191,25 @@ of runs ordered by creation time descending, then ID descending. `limit` default
 to 20 and accepts values from 1 to 100. Try `/api/runs?limit=2` or use `/docs`.
 Responses include source timestamps and results, but omit internal ingestion metadata.
 
+### Run details
+
+Click a workflow name in the table to open its details panel. The panel fetches
+`GET /api/runs/{id}` using the local database ID from the list response, not the
+GitHub run ID. Each rerun attempt has its own local ID and details cache entry.
+The endpoint returns the same public fields as a list entry, HTTP 404 when the
+stored attempt is missing, or HTTP 422 for invalid or out-of-range IDs.
+
+Details show the repository, GitHub run ID, attempt, status, conclusion, and
+available source timestamps in UTC. Missing timestamps remain unavailable;
+completion times and durations are not inferred. This is a stored snapshot;
+opening or refreshing details does not contact GitHub. Jobs and logs are not
+included yet.
+
+The panel has independent loading, retry, and not-found states. Failed refreshes
+retain cached details with a warning; a 404 hides them and is not automatically
+retried. Close the panel using its close button or Escape. The native dialog
+contains keyboard focus and returns it to the workflow button when closed.
+
 ### Reliability metrics
 
 `GET /api/metrics` returns `repository` (null for all repositories), `total_runs`,
