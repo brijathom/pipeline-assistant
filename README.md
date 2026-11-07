@@ -11,18 +11,22 @@ GitHub integration and AI investigations are planned.
 
 ## Backend setup
 
-Requires Python 3.12. From the repository root in PowerShell:
+Requires Python 3.15 (validated with 3.15.2). `backend/.python-version` records the
+tested patch version for compatible version managers. From the repository root
+in PowerShell:
 
 ```powershell
 cd backend
-py -3.12 -m venv .venv
+py -3.15 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 ```
 
-If `.venv` already exists, skip the environment creation command.
+If `.venv` already uses Python 3.15, skip the environment creation command.
+After upgrading from an older Python minor version, recreate the virtual
+environment with Python 3.15 and reinstall dependencies; do not edit `pyvenv.cfg`.
 Calling its Python executable directly avoids requiring shell activation.
 
-On Linux or macOS, create the environment with `python3.12 -m venv .venv`
+On Linux or macOS, create the environment with `python3.15 -m venv .venv`
 and use `.venv/bin/python` instead of `.\.venv\Scripts\python.exe` below.
 
 ## Run locally
