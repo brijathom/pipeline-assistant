@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_session
 from app.models import PipelineRun
 from app.queries import list_runs
+from app.repositories import RepositoryName
 from app.schemas import PipelineRunResponse
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
@@ -15,5 +16,6 @@ router = APIRouter(prefix="/api/runs", tags=["runs"])
 def get_runs(
     session: Annotated[Session, Depends(get_session)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    repository: Annotated[RepositoryName | None, Query()] = None,
 ) -> list[PipelineRun]:
-    return list_runs(session, limit)
+    return list_runs(session, limit, repository)

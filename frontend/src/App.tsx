@@ -1,13 +1,23 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
+import { fetchMetrics } from './api/metrics'
 import { fetchRuns, RUN_LIMIT } from './api/runs'
+import { MetricsCards } from './components/MetricsCards'
 import { RunTable } from './components/RunTable'
 
 export default function App() {
+  const [repositoryInput, setRepositoryInput] = useState('')
+  const [repository, setRepository] = useState<string | undefined>()
   const runsQuery = useQuery({
-    queryKey: ['runs', { limit: RUN_LIMIT }],
-    queryFn: ({ signal }) => fetchRuns(signal),
+    queryKey: ['runs', { limit: RUN_LIMIT, repository }],
+    queryFn: ({ signal }) => fetchRuns(signal, repository),
   })
+  const metricsQuery = useQuery({
+    queryKey: ['metrics', { repository }],
+    queryFn: ({ signal }) => fetchMetrics(signal, repository),
+  })
+  const isRefreshing = runsQuery.isFetching || metricsQuery.isFetching
 
   const runs = runsQuery.data
   const isDemo = runs && runs.length > 0 && runs.every((run) => run.repository.startsWith('demo/'))
@@ -59,16 +69,50 @@ export default function App() {
             <button
               className="button"
               type="button"
-              onClick={() => void runsQuery.refetch()}
-              disabled={runsQuery.isFetching}
+              onClick={() => void Promise.all([runsQuery.refetch(), metricsQuery.refetch()])}
+              disabled={isRefreshing}
             >
-              <svg className={runsQuery.isFetching ? 'animate-spin' : ''} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+              <svg className={isRefreshing ? 'animate-spin' : ''} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
                 <path d="M20 7v5h-5M4 17v-5h5" />
                 <path d="M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 17.9 17" />
               </svg>
-              {runsQuery.isFetching ? 'Refreshing…' : 'Refresh'}
+              {isRefreshing ? 'Refreshing…' : 'Refresh'}
             </button>
           </div>
+
+          <form
+            className="mb-6"
+            onSubmit={(event) => {
+              event.preventDefault()
+              setRepository(repositoryInput.trim().toLowerCase() || undefined)
+            }}
+          >
+            <label className="mb-2 block text-xs font-semibold text-slate-700" htmlFor="repository">Repository</label>
+            <div className="flex flex-wrap gap-2">
+              <input
+                id="repository"
+                className="min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm sm:w-80"
+                value={repositoryInput}
+                onChange={(event) => setRepositoryInput(event.target.value)}
+                placeholder="All repositories"
+                maxLength={140}
+                pattern="[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9_.\-]{1,100}"
+                title="Enter owner/repository, or leave empty for all repositories."
+                aria-describedby="repository-help"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+              <button className="button" type="submit">Apply filter</button>
+              {repository && (
+                <button className="button" type="button" onClick={() => {
+                  setRepositoryInput('')
+                  setRepository(undefined)
+                }}>Clear filter</button>
+              )}
+            </div>
+            <p id="repository-help" className="mt-2 text-xs leading-5 text-slate-500">Enter owner/repository to filter stored data, or leave empty to show all repositories.</p>
+          </form>
 
           {isDemo && (
             <div className="demo-notice">
@@ -76,6 +120,27 @@ export default function App() {
               <p>These are fictional workflow runs. No GitHub account is connected.</p>
             </div>
           )}
+
+          <section className="mb-7" aria-labelledby="metrics-heading" aria-busy={metricsQuery.isFetching}>
+            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+              <h2 id="metrics-heading" className="text-sm font-semibold text-slate-800">Reliability overview</h2>
+              <span className="break-all text-xs text-slate-500">{repository || 'All repositories'}</span>
+            </div>
+            {metricsQuery.isPending ? (
+              <p role="status" className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500">Loading reliability metrics…</p>
+            ) : (
+              <>
+                {metricsQuery.isError && (
+                  <div role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
+                    <p>{metricsQuery.data ? 'Couldn’t refresh metrics. Showing previously loaded values.' : 'We couldn’t load reliability metrics.'}</p>
+                    <button className="button mt-3" type="button" onClick={() => void metricsQuery.refetch()} disabled={metricsQuery.isFetching}>Retry metrics</button>
+                  </div>
+                )}
+                {metricsQuery.data && <MetricsCards metrics={metricsQuery.data} />}
+              </>
+            )}
+            <p className="mt-3 text-xs leading-5 text-slate-500">Counts cover all stored attempts for this selection, not full GitHub history. Failed includes timed out; other outcomes remain in the total.</p>
+          </section>
 
           <section className="runs-panel" aria-labelledby="recent-runs-heading" aria-busy={runsQuery.isFetching}>
             <div className="panel-heading">

@@ -1,9 +1,10 @@
-import re
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic import PostgresDsn, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.repositories import RepositoryName
 
 
 class Settings(BaseSettings):
@@ -15,19 +16,7 @@ class Settings(BaseSettings):
     )
 
     database_url: SecretStr
-    github_repository: str | None = None
-
-    @field_validator("github_repository")
-    @classmethod
-    def validate_github_repository(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        value = value.strip().lower()
-        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,38}/[a-z0-9_.-]{1,100}", value):
-            raise ValueError("GITHUB_REPOSITORY must be a GitHub owner/repository name")
-        if value.split("/")[1] in {".", ".."}:
-            raise ValueError("GITHUB_REPOSITORY must contain a repository name")
-        return value
+    github_repository: RepositoryName | None = None
 
     @field_validator("database_url")
     @classmethod

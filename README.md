@@ -6,8 +6,8 @@ An AI-assisted CI/CD reliability and investigation platform, starting with GitHu
 
 The backend exposes a health endpoint and interactive API documentation, with
 SQLAlchemy models and an Alembic migration for pipeline runs in PostgreSQL.
-Fictional demo data, read-only ingestion of public GitHub Actions runs, a runs API,
-and a React dashboard are included. AI investigations are planned.
+Fictional demo data, read-only ingestion of public GitHub Actions runs, runs and
+metrics APIs, and a React dashboard are included. AI investigations are planned.
 
 ## Backend setup
 
@@ -60,7 +60,11 @@ npm run dev
 
 Open <http://127.0.0.1:5173>. The dashboard displays up to 20 recent runs, including
 loading, empty, and retryable error states. Refresh reloads the data; a failed
-refresh preserves previously loaded rows and shows a warning. Times are in UTC.
+refresh preserves previously loaded rows and shows a warning. Four overview cards
+count all stored attempts for the selection, independently of the recent-run
+limit. The repository filter applies to both cards and table. Leave it empty for
+all repositories, or enter a name such as `actions/setup-node`. Refresh reloads
+stored data; it does not fetch new runs from GitHub. Times are in UTC.
 
 The browser requests relative `/api` URLs. Vite proxies these requests to
 `http://127.0.0.1:8000` during development, so no backend CORS changes are needed.
@@ -108,6 +112,12 @@ Playwright starts FastAPI and Vite when needed and stops the servers it started
 afterward. Existing local servers are reused. Tests include a real, read-only
 browser-to-API check and intercepted responses for loading, empty, and error/retry
 states. The live check expects at least one seeded or imported run to be present.
+
+On Windows, a restricted automation sandbox can block Playwright from stopping
+the server processes it started, leaving the command waiting after tests pass.
+If this happens, run the tests from a normal VS Code terminal. Automated test
+runs need permission to terminate their own child processes; increasing the
+server startup timeout will not fix blocked cleanup.
 
 On Windows the tests use installed Microsoft Edge. Elsewhere, install Playwright's
 Chromium with `npx playwright install chromium`. Set `PLAYWRIGHT_CHANNEL` to use
@@ -180,6 +190,26 @@ existing rows and inserts no duplicates. Seed data is not inserted at API startu
 of runs ordered by creation time descending, then ID descending. `limit` defaults
 to 20 and accepts values from 1 to 100. Try `/api/runs?limit=2` or use `/docs`.
 Responses include source timestamps and results, but omit internal ingestion metadata.
+
+### Reliability metrics
+
+`GET /api/metrics` returns `repository` (null for all repositories), `total_runs`,
+`successful_runs`, `failed_runs`, and `in_progress_runs`. Both `/api/metrics` and
+`/api/runs` accept an optional `repository=owner/repository` query parameter.
+Names are trimmed and normalized to lowercase; malformed names return HTTP 422.
+Unknown repositories return zero counts and an empty run list.
+
+One PostgreSQL aggregate query counts all stored attempts for the selection:
+successful means status `completed` and conclusion `success`; failed means
+`completed` with `failure` or `timed_out`; in progress means status `in_progress`.
+Queued, waiting, cancelled, skipped, neutral, and unknown outcomes contribute to
+the total without being treated as successes or failures. The four values are
+not an exhaustive partition of the total.
+
+Rerun attempts count separately when imported. These are observed stored
+attempts, not full GitHub history or a live status feed. No date window or
+duration is implied. Metrics have independent loading and retry states; failed
+refreshes retain cached counts with a warning, just as the run list retains rows.
 
 ## Import public GitHub Actions runs
 
@@ -255,7 +285,9 @@ the persistent development database. Use `docker compose --profile test stop db-
 from the repository root when finished; its data is disposable.
 
 Tests cover empty results, deterministic ordering,
-the result limit, response serialization, invalid limits, and seed idempotency.
+the result limit, response serialization, invalid limits, seed idempotency, and
+repository-scoped metrics across all stored attempts, including non-success
+outcomes and repeated attempts.
 
 ## Continuous integration
 

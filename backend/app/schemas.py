@@ -16,3 +16,11 @@ class PipelineRunResponse(BaseModel):
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None
+
+
+class PipelineMetricsResponse(BaseModel):
+    repository: str | None
+    total_runs: int
+    successful_runs: int
+    failed_runs: int
+    in_progress_runs: int
