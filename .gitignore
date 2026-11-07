@@ -28,6 +28,7 @@ playwright-report/
 test-results/
 
 # Local tools and credentials
+/.tools/
 .idea/
 .aws/
 .gcloud/

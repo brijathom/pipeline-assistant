@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+@layer base {
+  body { @apply m-0 bg-[#f5f6f8] font-sans text-sm text-slate-700 antialiased; }
+  button, a { -webkit-tap-highlight-color: transparent; }
+  button { @apply cursor-pointer; }
+  button:disabled { @apply cursor-wait opacity-60; }
+  :focus-visible { @apply outline-2 outline-offset-4 outline-indigo-600; }
+}
+
+@layer components {
+  .app-shell { @apply min-h-screen md:grid md:grid-cols-[224px_minmax(0,1fr)]; }
+  .sidebar { @apply sticky top-0 hidden h-screen flex-col border-r border-slate-200 bg-white px-5 py-8 md:flex; }
+  .brand { @apply flex items-center gap-3 px-2 text-base font-semibold tracking-tight text-slate-900; }
+  .sidebar-label { @apply mb-3 mt-12 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400; }
+  .nav-link { @apply flex items-center gap-3 rounded-lg bg-indigo-50 px-3 py-3 text-[13px] font-semibold text-indigo-700; }
+  .sidebar-note { @apply mt-auto flex items-center gap-2 border-t border-slate-100 px-2 pt-5 text-[11px] text-slate-500; }
+  .topbar { @apply flex h-[73px] items-center justify-between border-b border-slate-200 bg-white px-6 text-xs lg:px-10; }
+  .main-content { @apply mx-auto max-w-[1440px] px-5 py-9 sm:px-8 lg:px-10 lg:py-12; }
+  .eyebrow { @apply text-[10px] font-semibold uppercase tracking-[0.16em] text-indigo-600; }
+  .button { @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-xs transition-colors hover:bg-slate-50; }
+  .demo-notice { @apply mb-5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-indigo-100 bg-indigo-50/50 px-4 py-3 text-xs leading-5 text-slate-600; }
+  .demo-label { @apply rounded border border-indigo-200/70 bg-white px-2 py-0.5 text-[10px] font-semibold text-indigo-700; }
+  .runs-panel { @apply overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs; }
+  .panel-heading { @apply flex items-center justify-between border-b border-slate-200 px-5 py-5 sm:px-6; }
+  .count-badge { @apply rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 tabular-nums; }
+  .runs-table { @apply w-full border-collapse text-left text-xs sm:min-w-[740px]; }
+  .runs-table th { @apply bg-slate-50/70 px-4 py-3 text-[10px] font-medium uppercase tracking-wider text-slate-500 sm:px-6; }
+  .runs-table td { @apply px-4 py-5 align-middle sm:px-6; }
+  .runs-table tbody tr { @apply border-t border-slate-100 transition-colors hover:bg-slate-50/60; }
+  .badge { @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-1 text-[11px] font-medium; }
+  .badge-success { @apply border-emerald-200/60 bg-emerald-50 text-emerald-800; }
+  .badge-failure { @apply border-rose-200/60 bg-rose-50 text-rose-800; }
+  .badge-neutral { @apply border-slate-200 bg-slate-50 text-slate-600; }
+  .status { @apply inline-flex items-center gap-2 whitespace-nowrap text-[11px] text-slate-600; }
+  .status-dot { @apply inline-block size-1.5 shrink-0 rounded-full bg-slate-400; }
+  .status-active { @apply text-indigo-700; }
+  .status-active .status-dot { @apply bg-indigo-500; }
+  .panel-footer { @apply flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-slate-50/40 px-6 py-3.5 text-[10px] text-slate-500; }
+  .empty-state { @apply flex min-h-72 flex-col items-center justify-center px-6 py-12 text-center; }
+  .empty-state h3 { @apply mt-4 text-sm font-semibold text-slate-800; }
+  .empty-state p { @apply mt-2 max-w-sm text-xs leading-5 text-slate-500; }
+  .state-symbol { @apply flex size-10 items-center justify-center rounded-xl text-xl font-semibold; }
+  .refresh-warning { @apply border-b border-amber-200 bg-amber-50 px-6 py-3 text-xs text-amber-900; }
+  .skeleton { @apply animate-pulse bg-slate-100; }
+  .skip-link { @apply fixed top-3 left-3 z-50 -translate-y-24 rounded-lg bg-indigo-700 px-4 py-3 text-white focus:translate-y-0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

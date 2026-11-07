@@ -6,8 +6,8 @@ An AI-assisted CI/CD reliability and investigation platform, starting with GitHu
 
 The backend exposes a health endpoint and interactive API documentation, with
 SQLAlchemy models and an Alembic migration for pipeline runs in PostgreSQL.
-Fictional demo data and a read-only runs API are included.
-GitHub integration, the frontend, and AI investigations are planned.
+Fictional demo data, a read-only runs API, and a React dashboard are included.
+GitHub integration and AI investigations are planned.
 
 ## Backend setup
 
@@ -38,6 +38,77 @@ From `backend`:
 
 The health endpoint checks that the application can respond. It does not check
 external dependencies. `--reload` is for local development.
+
+## Frontend
+
+Requires Node.js 24 and npm. Check `node --version` before installing; the
+frontend enforces this requirement. `.node-version` records the Node major
+version for compatible version managers.
+
+With the local database migrated and seeded, start FastAPI using the command
+above. In a second terminal, from the repository root:
+
+```powershell
+cd frontend
+npm ci
+npm run dev
+```
+
+Open <http://127.0.0.1:5173>. The dashboard displays up to 20 recent runs, including
+loading, empty, and retryable error states. Refresh reloads the data; a failed
+refresh preserves previously loaded rows and shows a warning. Times are in UTC.
+
+The browser requests relative `/api` URLs. Vite proxies these requests to
+`http://127.0.0.1:8000` during development, so no backend CORS changes are needed.
+TanStack Query owns caching and request state, with a 30-second stale time and
+one automatic retry. The TypeScript response interface documents the API contract;
+it does not perform runtime JSON validation.
+
+Vite's proxy is a development feature. A production host must route `/api` to
+FastAPI separately; `npm run preview` only serves the frontend build.
+
+To check types and create the production bundle, from `frontend`:
+
+```powershell
+npm run build
+```
+
+`npm run typecheck` runs only the TypeScript check. Commit `package-lock.json`
+with dependency changes; `npm ci` installs the locked dependency tree.
+
+### Project-local Node on Windows
+
+A portable Node runtime downloaded during development is kept under the ignored
+`.tools` directory. If present, select it for the current PowerShell terminal
+from the repository root before running npm:
+
+```powershell
+$nodeRuntime = Get-ChildItem .tools -Directory -Filter 'node-v24.*-win-x64' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if (-not $nodeRuntime) { throw 'Install Node.js 24 or provide a portable runtime in .tools.' }
+$env:Path = $nodeRuntime.FullName + ';' + $env:Path
+node --version
+```
+
+This changes only the current terminal's PATH. A system installation of Node.js 24
+also works and does not require this step.
+
+### Browser tests
+
+With the development database running, migrated, and seeded, run from `frontend`:
+
+```powershell
+npm run test:e2e
+```
+
+Playwright starts FastAPI and Vite when needed and stops the servers it started
+afterward. Existing local servers are reused. Tests include a real, read-only
+browser-to-API check and intercepted responses for loading, empty, and error/retry
+states. The live check expects the fictional demo seed data to be present.
+
+On Windows the tests use installed Microsoft Edge. Elsewhere, install Playwright's
+Chromium with `npx playwright install chromium`. Set `PLAYWRIGHT_CHANNEL` to use
+another installed browser channel, such as `chrome`. Browser results, screenshots,
+and traces are ignored by Git.
 
 ## Local database
 
