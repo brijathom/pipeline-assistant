@@ -172,7 +172,8 @@ Jobs and steps store status, nullable conclusion, nullable start/completion
 timestamps, and ingestion time. Unknown source timestamps remain null. Foreign
 keys prevent orphaned evidence; deleting a local run cascades to its jobs and
 steps, while deleting a job removes its steps. These rules apply to local stored
-data. Job/step ingestion and display will be added in the following slices.
+data. The job importer below populates this evidence; displaying it in the
+details panel is the next slice.
 
 SQLAlchemy uses synchronous sessions, intended to be supplied per request via
 `get_session`. Write operations must commit explicitly. Sessions close after use
@@ -282,6 +283,41 @@ time. Accurate duration metrics will require job timing data in a later step.
 GitHub HTTP tests use a mock transport and fictional fixtures; CI never needs
 GitHub credentials or network access to test this integration. PostgreSQL tests
 cover repeated imports, status updates, and separate rerun attempts.
+
+### Import jobs and steps for one attempt
+
+After applying migrations, choose a non-demo run from `GET /api/runs` or `/docs`.
+Use its local `id`, not its `github_run_id`. From `backend`, replacing `123` with
+that local ID:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.import_jobs --run-id 123
+```
+
+The importer derives the repository, GitHub run ID, and attempt from that stored
+row, so changing `GITHUB_REPOSITORY` does not redirect an existing run's evidence.
+Missing local IDs and fictional `demo/` runs are rejected before contacting
+GitHub. The repository must still be public; only unauthenticated GET requests
+are made. No import endpoint is exposed to dashboard visitors.
+
+The command uses GitHub's [jobs-for-an-attempt endpoint](https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run-attempt).
+It fetches up to five pages of 100 jobs (500 jobs maximum), constructing each
+page request against `api.github.com` rather than following pagination URLs.
+It requires complete pages and stable totals, validates every job/step, and
+rejects duplicate job IDs, duplicate step numbers, and mismatched run identities.
+A failed page or an attempt exceeding the limit leaves existing evidence intact.
+
+A short read session identifies the run and closes before network requests.
+Once fetching finishes, a new transaction locks and rechecks the parent identity,
+then atomically upserts jobs and steps. Repeating the command preserves local
+record IDs while refreshing names, statuses, conclusions, and source timestamps.
+Jobs or steps omitted from a later response are retained as observed evidence;
+this command does not delete records to mirror a shrinking response. Reported
+counts are records processed in this import, not newly inserted records.
+
+Job and step timestamps remain source values. Workflow completion times are not
+inferred from job completion times. The importer does not retrieve logs, and the
+details panel continues to show run metadata until job display is implemented.
 
 ## Test
 

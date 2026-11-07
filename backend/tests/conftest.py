@@ -22,6 +22,12 @@ def github_runs_payload() -> dict:
     return json.loads(fixture.read_text(encoding="utf-8"))
 
 
+@pytest.fixture
+def github_jobs_payload() -> dict:
+    fixture = Path(__file__).parent / "fixtures" / "github_jobs.json"
+    return json.loads(fixture.read_text(encoding="utf-8"))
+
+
 @pytest.fixture(scope="session")
 def test_engine() -> Iterator[Engine]:
     database_url = os.environ.get("TEST_DATABASE_URL")
