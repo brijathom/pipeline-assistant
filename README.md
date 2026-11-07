@@ -6,8 +6,8 @@ An AI-assisted CI/CD reliability and investigation platform, starting with GitHu
 
 The backend exposes a health endpoint and interactive API documentation, with
 SQLAlchemy models and an Alembic migration for pipeline runs in PostgreSQL.
-Fictional demo data, a read-only runs API, and a React dashboard are included.
-GitHub integration and AI investigations are planned.
+Fictional demo data, read-only ingestion of public GitHub Actions runs, a runs API,
+and a React dashboard are included. AI investigations are planned.
 
 ## Backend setup
 
@@ -107,7 +107,7 @@ npm run test:e2e
 Playwright starts FastAPI and Vite when needed and stops the servers it started
 afterward. Existing local servers are reused. Tests include a real, read-only
 browser-to-API check and intercepted responses for loading, empty, and error/retry
-states. The live check expects the fictional demo seed data to be present.
+states. The live check expects at least one seeded or imported run to be present.
 
 On Windows the tests use installed Microsoft Edge. Elsewhere, install Playwright's
 Chromium with `npx playwright install chromium`. Set `PLAYWRIGHT_CHANNEL` to use
@@ -180,6 +180,47 @@ existing rows and inserts no duplicates. Seed data is not inserted at API startu
 of runs ordered by creation time descending, then ID descending. `limit` defaults
 to 20 and accepts values from 1 to 100. Try `/api/runs?limit=2` or use `/docs`.
 Responses include source timestamps and results, but omit internal ingestion metadata.
+
+## Import public GitHub Actions runs
+
+Set one repository in `backend/.env`:
+
+```dotenv
+GITHUB_REPOSITORY=actions/setup-node
+```
+
+With the development database running and migrated, run from `backend`:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.import_runs
+```
+
+The command validates the repository name, confirms the repository is public,
+and fetches the latest page of runs. It defaults to 20 runs; use `--limit 5` to
+fetch fewer, up to a maximum of 100. Refresh the dashboard to see the imported
+rows alongside any existing demo data. GitHub reads finish and the full payload
+is validated before the database transaction starts.
+
+Each repository/run ID/attempt combination is inserted or refreshed atomically,
+so repeating an import updates changing statuses without creating duplicates.
+Later attempts of the same run are separate records when observed. The importer
+fetches only the latest attempt returned for each run; this is a bounded snapshot,
+not a full historical backfill or scheduled synchronization.
+
+Only unauthenticated GET requests to `api.github.com` are made. No GitHub token is
+needed. The importer does not follow redirects or pagination links, and reports
+timeouts, rate limits, missing repositories, and invalid responses with a nonzero
+exit code. Public unauthenticated requests have a lower rate limit; wait before
+retrying when GitHub rejects a request. No import endpoint is exposed to visitors.
+
+`created_at` and `started_at` use GitHub's `created_at` and `run_started_at` fields.
+The run-list response has no completion timestamp, so new imports leave
+`completed_at` unknown. `updated_at` is not used as a substitute for completion
+time. Accurate duration metrics will require job timing data in a later step.
+
+GitHub HTTP tests use a mock transport and fictional fixtures; CI never needs
+GitHub credentials or network access to test this integration. PostgreSQL tests
+cover repeated imports, status updates, and separate rerun attempts.
 
 ## Test
 

@@ -9,7 +9,7 @@ test('displays real API runs on desktop and mobile', async ({ page }) => {
   const response = await page.request.get('/api/runs?limit=20')
   expect(response.ok()).toBeTruthy()
   const runs = await response.json() as PipelineRun[]
-  expect(runs.some((run) => run.repository === 'demo/pipeline-assistant')).toBeTruthy()
+  expect(runs.length).toBeGreaterThan(0)
 
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Pipeline runs', exact: true })).toBeVisible()
@@ -25,8 +25,8 @@ test('displays real API runs on desktop and mobile', async ({ page }) => {
 
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(page.getByRole('heading', { name: 'Pipeline runs', exact: true })).toBeVisible()
-  await expect(page.getByRole('cell', { name: 'Failure', exact: true })).toBeVisible()
-  await expect(page.getByRole('cell', { name: 'Success', exact: true })).toBeVisible()
+  await expect(page.getByRole('columnheader', { name: 'Conclusion', exact: true })).toBeVisible()
+  await expect(rows.first().getByRole('cell').last()).toBeInViewport()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
   await page.screenshot({ path: 'test-results/pipeline-runs-mobile.png', fullPage: true })
   expect(errors).toEqual([])

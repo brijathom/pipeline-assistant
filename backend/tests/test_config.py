@@ -21,3 +21,25 @@ def test_database_url_hides_password() -> None:
 def test_database_url_rejects_other_drivers() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, database_url="postgresql://user:password@localhost/test")
+
+
+def test_repository_name_is_normalized() -> None:
+    settings = Settings(
+        _env_file=None,
+        database_url="postgresql+psycopg://user:password@localhost/test",
+        github_repository=" Example/Project ",
+    )
+    assert settings.github_repository == "example/project"
+
+
+@pytest.mark.parametrize("repository", [
+    "https://github.com/owner/repo", "owner/repo/extra", "owner/..", "owner/.",
+    "owner/repo?query=1", "owner%2frepo", "", "owner/repo#fragment",
+])
+def test_repository_must_be_a_name_not_a_url(repository: str) -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            database_url="postgresql+psycopg://user:password@localhost/test",
+            github_repository=repository,
+        )

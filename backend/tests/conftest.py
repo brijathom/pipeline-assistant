@@ -1,3 +1,4 @@
+import json
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -13,6 +14,12 @@ from sqlalchemy.orm import Session
 from app.database import get_session
 from app.main import app
 from app.models import PipelineRun
+
+
+@pytest.fixture
+def github_runs_payload() -> dict:
+    fixture = Path(__file__).parent / "fixtures" / "github_runs.json"
+    return json.loads(fixture.read_text(encoding="utf-8"))
 
 
 @pytest.fixture(scope="session")
