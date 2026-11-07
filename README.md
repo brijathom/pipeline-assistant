@@ -162,6 +162,18 @@ conclusion are separate; unfinished runs may have no conclusion or completion
 timestamp. Source timestamps use PostgreSQL `timestamp with time zone`;
 `ingested_at` records when the row reached our database.
 
+Migration `0002` adds `pipeline_jobs` and `pipeline_job_steps`. Each job references
+one local run attempt and is unique by `(pipeline_run_id, github_job_id)`. Each
+step references one job and is unique by `(pipeline_job_id, step_number)`. Job
+IDs and step numbers must be positive; step numbers can have gaps, and names
+can repeat. Names use text columns to accommodate long workflow labels.
+
+Jobs and steps store status, nullable conclusion, nullable start/completion
+timestamps, and ingestion time. Unknown source timestamps remain null. Foreign
+keys prevent orphaned evidence; deleting a local run cascades to its jobs and
+steps, while deleting a job removes its steps. These rules apply to local stored
+data. Job/step ingestion and display will be added in the following slices.
+
 SQLAlchemy uses synchronous sessions, intended to be supplied per request via
 `get_session`. Write operations must commit explicitly. Sessions close after use
 and roll back uncommitted work. `/health` does not access the database and still
@@ -307,6 +319,13 @@ Tests cover empty results, deterministic ordering,
 the result limit, response serialization, invalid limits, seed idempotency, and
 repository-scoped metrics across all stored attempts, including non-success
 outcomes and repeated attempts.
+
+Job/step tests exercise parent-scoped uniqueness, foreign keys, cascading
+cleanup, nullable results, and timezone-aware timestamp round trips in PostgreSQL.
+A migration test upgrades, downgrades, and upgrades again in an isolated,
+transaction-local schema inside the guarded test database. It verifies that
+existing runs survive the new migration and its rollback; it never downgrades
+the development database.
 
 ## Continuous integration
 
