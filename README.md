@@ -216,6 +216,31 @@ from the repository root when finished; its data is disposable.
 Tests cover empty results, deterministic ordering,
 the result limit, response serialization, invalid limits, and seed idempotency.
 
+## Continuous integration
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on pushes and pull
+requests. Two independent Ubuntu 24.04 jobs check the application:
+
+- **Backend tests:** reads Python from `backend/.python-version`, installs the
+  backend with development dependencies, checks dependency consistency, and runs
+  Pytest. A disposable PostgreSQL 17 service exposes port 5433 with the dedicated
+  test database settings. The test fixture applies migrations and rolls back test
+  data. `TEST_DATABASE_URL` is set explicitly so integration tests run in CI.
+- **Frontend build:** reads Node from `frontend/.node-version`, installs the
+  dependency tree with `npm ci`, then runs the TypeScript check and Vite build.
+
+Both jobs use read-only repository permissions. Database credentials are only
+for the disposable CI service; no repository secrets or local `.env` files are
+required. GitHub Actions are pinned to commit SHAs with their release versions
+in comments. Dependency download caches use the backend manifest and frontend
+lockfile as inputs. New runs cancel older runs for the same Git ref, and each
+job has a time limit.
+
+After pushing, open the repository's **Actions** tab, select **CI**, and inspect
+the two jobs. A failed test or build fails its job. Branch protection can later
+require these checks before merging. Browser test instructions are above; the
+current CI checks cover backend tests and the frontend build.
+
 ## Dependencies
 
 `backend/pyproject.toml` declares application dependencies and the optional `dev`
