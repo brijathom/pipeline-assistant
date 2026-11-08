@@ -37,7 +37,9 @@ percentage. A milestone is complete only when its listed outcomes are verified.
   idempotent delivery handling, bounded retries and SSE progress/reconnection.
   - [x] Durable task state, protected queue/status APIs, one-attempt local worker,
     duplicate handling and operator status polling.
-  - [ ] Pub/Sub dispatch/consumption, authentication and bounded delivery recovery.
+  - [x] Pub/Sub dispatch/consumption and bounded delivery recovery, verified with
+    Google's local emulator and fake AI. Cloud clients use ADC; actual cloud IAM
+    verification remains part of deployment in milestone 12.
   - [ ] Authenticated SSE progress and reconnection.
 - [ ] **11. Performance metrics:** defined duration and time-window calculations,
   repository-level trends and useful dashboard presentation with appropriate tests.
@@ -45,8 +47,9 @@ percentage. A milestone is complete only when its listed outcomes are verified.
   managed PostgreSQL/migrations, IAM/secrets, logs/health checks, access/rate/cost
   controls, deployment CI, public demo and documented operational trade-offs.
 
-Current next step: Pub/Sub delivery around the durable task worker, followed by
-authenticated SSE progress. The local task workflow is documented in
+Current next step: authenticated SSE progress. Cloud IAM verification belongs
+with deployment; the local Pub/Sub round trip is verified.
+The local task workflow is documented in
 `docs/ASYNC_INVESTIGATIONS.md`; milestone 10 remains open.
 
 BigQuery and additional identity providers are optional choices, not completion

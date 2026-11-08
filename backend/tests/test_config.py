@@ -10,6 +10,12 @@ def test_database_url_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
         Settings(_env_file=None)
 
 
+@pytest.mark.parametrize("field,value", [("pubsub_project_id", "https://external.invalid"), ("pubsub_topic_id", "../topic"), ("pubsub_subscription_id", "projects/other/subscriptions/other")])
+def test_pubsub_configuration_uses_names_not_arbitrary_paths(field, value):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, database_url="postgresql+psycopg://user:password@localhost/test", **{field: value})
+
+
 def test_database_url_hides_password() -> None:
     settings = Settings(
         _env_file=None,

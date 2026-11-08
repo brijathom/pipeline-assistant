@@ -18,6 +18,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+pubsub = [
+    "google-cloud-pubsub==2.43.0",
+]
 ai = [
     "google-adk==2.14.0",
     "google-genai==2.34.0",

@@ -78,6 +78,7 @@ export function InvestigationTasks({ token, onUnauthorized, onOpenDrafts }: {
       <p className="break-all text-slate-500">Task {task.id}</p>
       <p className="text-slate-500">Queued <SourceTime value={task.created_at} /></p>
       {task.error_code && <p className="text-amber-900">{failures[task.error_code] || 'Task failed. Check its status before taking further action.'}</p>}
+      {task.dispatch_exhausted && <p role="alert" className="text-amber-900">Automatic delivery stopped after repeated failures. Operator recovery is required; this task will not start a new model attempt automatically.</p>}
       {task.status === 'succeeded' && task.draft_id && <button className="button" type="button" onClick={onOpenDrafts}>Review drafts</button>}
     </li>)}</ul>}
     <p className="text-xs leading-5 text-slate-500">Status refreshes every two seconds while a listed task is queued or running. Failed and interrupted model requests are not automatically retried.</p>

@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr | None = None
     reviewer_access_token: SecretStr | None = None
     ai_model: str = Field(default="gemini-3.5-flash-lite", pattern=r"^gemini-[a-z0-9.-]{1,80}$")
+    pubsub_project_id: str = Field(default="pipeline-assistant-local", pattern=r"^[a-z][a-z0-9-]{4,61}[a-z0-9]$")
+    pubsub_topic_id: str = Field(default="investigation-tasks", pattern=r"^[A-Za-z][A-Za-z0-9_-]{2,99}$")
+    pubsub_subscription_id: str = Field(default="investigation-worker", pattern=r"^[A-Za-z][A-Za-z0-9_-]{2,99}$")
 
     @field_validator("reviewer_access_token")
     @classmethod

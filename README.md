@@ -795,8 +795,9 @@ No real excerpt is automatically curated by setup, testing or opening the inbox.
 
 The protected **Reviewer inbox → Investigation tasks** view can queue a run's
 current curated failure evidence, track durable status and lead to its unreviewed
-draft. Apply migration `0007` and restart the backend before using it. Queueing
-does not call Gemini; process a chosen task separately from `backend`:
+draft. Apply migrations through `0008` and restart the backend before using it.
+Queueing saves a task; a separate worker makes the Gemini call. Process a chosen
+task directly from `backend`:
 
 ```powershell
 .\.venv\Scripts\python.exe -m app.task_worker --task-id TASK_UUID
@@ -805,8 +806,11 @@ does not call Gemini; process a chosen task separately from `backend`:
 The worker attempts one bounded generation and never automatically retries a
 running or completed task. Evidence is checked before and after generation;
 success stores a private draft without approving or publishing it. The worker
-uses Gemini quota under the existing account settings. This first slice uses a
-local worker command and status polling; Pub/Sub and SSE are still to follow.
+uses Gemini quota under the existing account settings. Optional Pub/Sub commands
+dispatch queued task UUIDs and consume messages in bounded batches, with saved
+publication attempts and safe duplicate handling. The inbox still uses status
+polling; SSE is next. Local emulator setup, the verified transport round trip
+and the remaining cloud IAM checks are described in the linked instructions.
 
 See [task lifecycle, recovery and local instructions](docs/ASYNC_INVESTIGATIONS.md).
 

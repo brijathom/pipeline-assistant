@@ -8,6 +8,7 @@ const task: InvestigationTask = {
   id, pipeline_run_id: 4, repository: 'demo/pipeline-assistant', github_run_id: 1002, run_attempt: 1,
   status: 'queued', model: 'gemini-3.5-flash-lite', prompt_version: 'investigation-v1',
   created_at: '2026-11-08T10:00:00Z', started_at: null, completed_at: null, draft_id: null, error_code: null,
+  dispatch_exhausted: false,
 }
 
 test.beforeEach(async ({ page }) => {
@@ -31,6 +32,17 @@ async function openTasks(page: Page) {
   await dialog.getByRole('button', { name: 'Investigation tasks', exact: true }).click()
   return dialog
 }
+
+test('stopped automatic delivery shows operator recovery without resubmitting', async ({ page }) => {
+  let posts = 0
+  await page.route('**/api/reviewer/tasks?*', (route) => route.fulfill({ json: [{ ...task, dispatch_exhausted: true }] }))
+  await page.route('**/api/reviewer/tasks', (route) => { posts += 1; return route.fulfill({ status: 500 }) })
+  const dialog = await openTasks(page)
+  await expect(dialog.getByRole('alert')).toContainText('Automatic delivery stopped after repeated failures')
+  await dialog.getByLabel('Run to investigate', { exact: true }).selectOption('4')
+  await expect(dialog.getByRole('button', { name: 'Queue investigation', exact: true })).toBeDisabled()
+  expect(posts).toBe(0)
+})
 
 test('queues once, polls lifecycle status and leads to private draft review', async ({ page }) => {
   let current: InvestigationTask | null = null

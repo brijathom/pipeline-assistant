@@ -50,10 +50,17 @@ def test_job_migration_round_trip_preserves_existing_runs(test_engine: Engine) -
                 id=uuid4(), pipeline_run_id=run_id, content_fingerprint="b" * 64,
                 evidence_fingerprint="a" * 64, document={"report": {}},
             ))
+            task_id = uuid4()
             connection.execute(InvestigationTask.__table__.insert().values(
-                id=uuid4(), pipeline_run_id=run_id, model="gemini-3.5-flash-lite", prompt_version="investigation-v1",
+                id=task_id, pipeline_run_id=run_id, model="gemini-3.5-flash-lite", prompt_version="investigation-v1",
                 evidence_fingerprint="a" * 64, evidence_snapshot={},
             ))
+            connection.execute(text("UPDATE investigation_tasks SET dispatch_attempts = 2 WHERE id = :task_id"), {"task_id": task_id})
+            command.downgrade(config, "0007")
+            assert connection.scalar(text("SELECT count(*) FROM investigation_tasks")) == 1
+            assert "dispatch_attempts" not in {column["name"] for column in inspect(connection).get_columns("investigation_tasks", schema=schema)}
+            command.upgrade(config, "head")
+            assert connection.scalar(select(InvestigationTask.dispatch_attempts).where(InvestigationTask.id == task_id)) == 0
             command.downgrade(config, "0006")
             assert "investigation_tasks" not in inspect(connection).get_table_names(schema=schema)
             assert connection.scalar(select(func.count()).select_from(PipelineRun)) == 1

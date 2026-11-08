@@ -169,3 +169,4 @@ class InvestigationTaskResponse(BaseModel):
     completed_at: datetime | None
     draft_id: UUID | None
     error_code: Literal["evidence_changed", "invalid_snapshot", "generation_failed", "worker_interrupted"] | None
+    dispatch_exhausted: bool

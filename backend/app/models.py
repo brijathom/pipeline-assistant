@@ -171,6 +171,8 @@ class InvestigationTask(Base):
         CheckConstraint("error_code IN ('evidence_changed', 'invalid_snapshot', 'generation_failed', 'worker_interrupted')", name="ck_investigation_tasks_error"),
         Index("uq_investigation_tasks_active_run", "pipeline_run_id", unique=True,
               postgresql_where=text("status IN ('queued', 'running')")),
+        CheckConstraint("dispatch_attempts BETWEEN 0 AND 5", name="ck_investigation_tasks_dispatch_attempts"),
+        Index("ix_investigation_tasks_dispatch", "dispatch_after", postgresql_where=text("status = 'queued' AND dispatched_at IS NULL AND dispatch_attempts < 5")),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -185,3 +187,6 @@ class InvestigationTask(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     draft_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("pipeline_investigation_drafts.id", name="fk_investigation_tasks_draft", ondelete="SET NULL"))
     error_code: Mapped[str | None] = mapped_column(String(40))
+    dispatch_attempts: Mapped[int] = mapped_column(server_default="0")
+    dispatch_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

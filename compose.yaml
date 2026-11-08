@@ -1,4 +1,11 @@
 services:
+  pubsub:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    profiles: ["pubsub"]
+    entrypoint: ["gcloud", "beta", "emulators", "pubsub", "start", "--project=pipeline-assistant-local", "--host-port=0.0.0.0:8085", "--quiet"]
+    ports:
+      - "127.0.0.1:8085:8085"
+
   db:
     image: postgres:17
     environment:

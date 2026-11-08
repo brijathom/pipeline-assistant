@@ -24,6 +24,8 @@ def _summaries():
         PipelineRun.github_run_id, PipelineRun.run_attempt, InvestigationTask.status,
         InvestigationTask.model, InvestigationTask.prompt_version, InvestigationTask.created_at,
         InvestigationTask.started_at, InvestigationTask.completed_at, InvestigationTask.draft_id, InvestigationTask.error_code,
+        ((InvestigationTask.dispatch_attempts >= 5) & InvestigationTask.dispatched_at.is_(None)
+         & (InvestigationTask.status == "queued")).label("dispatch_exhausted"),
     ).join(PipelineRun, PipelineRun.id == InvestigationTask.pipeline_run_id)
 
 

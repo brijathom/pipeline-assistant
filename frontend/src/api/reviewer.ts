@@ -61,6 +61,7 @@ export interface InvestigationTask {
   completed_at: string | null
   draft_id: string | null
   error_code: 'evidence_changed' | 'invalid_snapshot' | 'generation_failed' | 'worker_interrupted' | null
+  dispatch_exhausted: boolean
 }
 
 interface TaskRequest { request_id: string; run_id: number }
