@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import PostgresDsn, SecretStr, field_validator
+from pydantic import Field, PostgresDsn, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.repositories import RepositoryName
@@ -17,6 +17,8 @@ class Settings(BaseSettings):
 
     database_url: SecretStr
     github_repository: RepositoryName | None = None
+    gemini_api_key: SecretStr | None = None
+    ai_model: str = Field(default="gemini-3.8-flash", pattern=r"^gemini-[a-z0-9.-]{1,80}$")
 
     @field_validator("database_url")
     @classmethod

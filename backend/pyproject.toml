@@ -18,6 +18,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+ai = [
+    "google-adk==2.14.0",
+    "google-genai==2.34.0",
+]
 dev = [
     "pytest==9.2.0",
 ]

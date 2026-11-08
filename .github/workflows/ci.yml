@@ -20,6 +20,8 @@ jobs:
       run:
         working-directory: backend
     env:
+      # PyYAML has no Python 3.15 wheel yet; its optional C extension is unnecessary here.
+      PYYAML_FORCE_LIBYAML: "0"
       # Disposable service-container credentials; never a development or production database.
       TEST_DATABASE_URL: postgresql+psycopg://pipeline_test:local-test-only@127.0.0.1:5433/pipeline_assistant_test
     services:
@@ -51,7 +53,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install -e ".[dev]"
+          python -m pip install -e ".[dev,ai]"
           python -m pip check
 
       - name: Run tests

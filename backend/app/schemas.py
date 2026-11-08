@@ -65,9 +65,10 @@ class PipelineJobLogResponse(BaseModel):
 
 
 class InvestigationCitation(BaseModel):
-    job_id: int = Field(gt=0)
+    # Inclusive integer bounds also work with Gemini's response-schema subset.
+    job_id: int = Field(ge=1)
     job_name: str = Field(min_length=1, max_length=240)
-    source_line: int = Field(gt=0)
+    source_line: int = Field(ge=1)
     quote: str = Field(min_length=1, max_length=4096)
 
 

@@ -15,7 +15,7 @@ class InvestigationError(Exception):
     """A safe local report-generation error."""
 
 
-def _run_id(value: str) -> int:
+def parse_run_id(value: str) -> int:
     try:
         result = int(value)
     except ValueError:
@@ -45,7 +45,7 @@ def investigate_run(run_id: int) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate a rule-based investigation from stored curated evidence. No AI model is called.")
-    parser.add_argument("--run-id", type=_run_id, required=True, help="Local run database ID")
+    parser.add_argument("--run-id", type=parse_run_id, required=True, help="Local run database ID")
     args = parser.parse_args()
     try:
         investigate_run(args.run_id)

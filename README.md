@@ -9,8 +9,8 @@ SQLAlchemy models and an Alembic migration for pipeline runs in PostgreSQL.
 Fictional demo data, read-only ingestion of public GitHub Actions runs, runs and
 metrics APIs, job/step evidence, bounded log imports, and a React dashboard are
 included. Curated fictional log excerpts and stored rule-based investigation
-reports are available in run details. AI-generated investigations are planned;
-the current report generator does not call an AI model.
+reports are available in run details. An optional Google ADK command generates
+private AI drafts for review; the public report generator remains rule-based.
 
 ## Backend setup
 
@@ -443,9 +443,10 @@ endpoint. A curation workflow will be added with access controls.
 The failed demo run (`demo/pipeline-assistant`, GitHub run `1002`) includes a
 stored investigation. Open its details and scroll to **Investigation** to see
 observations, suggested next steps, exact log quotes, source line numbers, and
-explicit limitations. Reports are clearly labelled **Rule-based evidence summary**;
-there is no Google ADK integration or model call yet. Recommendations are advisory
-and never modify or rerun a workflow.
+explicit limitations. Public reports are clearly labelled **Rule-based evidence
+summary** and do not call an AI model. The separate optional ADK command below
+creates private drafts. Recommendations are advisory and never modify or rerun
+a workflow.
 
 From `backend`, generate or refresh a report for one stored run, replacing `123`
 with its local database ID:
@@ -488,9 +489,71 @@ content on a refresh error because freshness could not be verified. **Refresh
 investigation** reloads stored data and does not generate a report. No public
 generation endpoint is exposed.
 
-The next major work remains Google ADK generation and evaluation, authenticated
-review/approval workflows, Pub/Sub processing and SSE progress, timing metrics,
-and containerized public deployment on Google Cloud Run with production checks.
+The next major work remains live model evaluation, authenticated review/approval
+workflows, Pub/Sub processing and SSE progress, timing metrics, and containerized
+public deployment on Google Cloud Run with production checks.
+
+### Optional Google ADK drafts
+
+The `ai` dependency group pins Google ADK and Google GenAI separately from the
+core API. Install it from `backend` in PowerShell:
+
+```powershell
+$env:PYYAML_FORCE_LIBYAML = "0"
+.\.venv\Scripts\python.exe -m pip install -e ".[dev,ai]"
+```
+
+The environment setting selects PyYAML's pure-Python build when Python 3.15 has
+no matching wheel, avoiding a requirement for Microsoft C++ Build Tools. It
+affects only that terminal. On Linux/macOS, use
+`PYYAML_FORCE_LIBYAML=0 .venv/bin/python -m pip install -e ".[dev,ai]"`.
+
+Add a Gemini API key to the ignored `backend/.env` locally; never paste it into
+code, Git, test fixtures, or chat. `GEMINI_API_KEY` is optional for the normal
+application. `AI_MODEL` defaults to `gemini-3.8-flash` and accepts Gemini model
+names, not URLs. This first provider uses the Gemini Developer API with explicit
+key authentication; Vertex AI/Google Cloud identity integration is future work.
+See Google's [API-key setup](https://ai.google.dev/gemini-api/docs/api-key) and
+[model documentation](https://aistudio.google.com/docs/models/gemini-3.8-flash).
+
+With a key configured, this explicit command sends curated evidence to Gemini
+and can incur model charges. Use the **local database ID** of the failed demo
+run from `/api/runs?repository=demo/pipeline-assistant`, not GitHub run number
+`1002`. From `backend`, replace `123` with that local ID:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.draft_investigation --run-id 123
+```
+
+`app/ai_investigation.py` creates a single `LlmAgent` with a fresh in-memory ADK
+session, no tools, and no subagents. Log text and names are treated as untrusted
+data in the prompt. Inputs are capped at 64 KiB, output at 8,192 tokens and
+128 KiB of final text, and generation at 60 seconds. The Gemini HTTP client has
+a 45-second timeout, fixed Google endpoint, and one attempt; ADK allows one
+model call. There are no repair calls or automatic retries. These bounds limit
+work but are not a currency-based spending cap.
+
+ADK requests structured output. A small provider schema translates the numeric
+report-version constraint for the Gemini SDK; the result is then validated
+against our canonical Pydantic schema and exact source-line citations. Citation
+checks establish that quotes exist, not that every inference is correct.
+Model-error callbacks replace provider exceptions before ADK can emit their raw
+tracebacks. The application does not print prompts, reports, or API keys.
+
+The command releases the database connection before generation and rechecks the
+evidence fingerprint afterward. If evidence changed, no draft is written. A
+successful run creates a uniquely named JSON file under ignored `backend/.drafts/`,
+containing `pending_review` status, model/prompt metadata, evidence fingerprint,
+snapshot, and report. Existing files and public database reports are not replaced.
+Review the draft in your editor for factual claims, citations, sensitive values,
+and recommendations. Approval and publication are not implemented in this slice;
+the API and UI never read these draft files.
+
+Tests exercise the real ADK runner with a fake model, plus the real Gemini client
+with mocked HTTP. They cover output validation, invented citations, provider
+failure, timeout cancellation, prompt/response caps, and preservation of public
+reports. No credentials or paid calls are needed for these tests. A live provider
+smoke test and evaluation of model quality remain outstanding.
 
 ## Test
 
@@ -548,7 +611,7 @@ the development database.
 requests. Two independent Ubuntu 24.04 jobs check the application:
 
 - **Backend tests:** reads Python from `backend/.python-version`, installs the
-  backend with development dependencies, checks dependency consistency, and runs
+  backend with development and optional AI dependencies, checks dependency consistency, and runs
   Pytest. A disposable PostgreSQL 17 service exposes port 5433 with the dedicated
   test database settings. The test fixture applies migrations and rolls back test
   data. `TEST_DATABASE_URL` is set explicitly so integration tests run in CI.
