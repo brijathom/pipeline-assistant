@@ -109,6 +109,7 @@ class ReviewerDraftSummary(BaseModel):
 
 class ReviewerDraftDetails(ReviewerDraftSummary):
     freshness: Literal["current", "stale", "invalid"]
+    is_published: bool = False
     model: str | None = None
     generated_at: datetime | None = None
     report: InvestigationReport | None = None

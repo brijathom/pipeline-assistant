@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { fetchPrivateDraft, fetchPrivateDrafts, ReviewerAccessError, submitPrivateReview } from '../api/reviewer'
+import { fetchPrivateDraft, fetchPrivateDrafts, publishPrivateDraft, ReviewerAccessError, submitPrivateReview } from '../api/reviewer'
 import type { PrivateDraft, ReviewDecision } from '../api/reviewer'
 import { InvestigationReportContent } from './InvestigationReportContent'
 import { SourceTime } from './SourceTime'
 
 export function ReviewerInbox({ onClose }: { onClose: () => void }) {
+  const publicClient = useQueryClient()
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [input, setInput] = useState('')
   const [session, setSession] = useState<{ token: string; client: QueryClient } | null>(null)
@@ -67,7 +68,8 @@ export function ReviewerInbox({ onClose }: { onClose: () => void }) {
           </form>
         ) : (
           <QueryClientProvider client={session.client}>
-            <DraftBrowser token={session.token} onUnauthorized={lock} />
+            <DraftBrowser token={session.token} onUnauthorized={lock}
+              onPublished={() => { void publicClient.invalidateQueries({ queryKey: ['run-investigation'] }) }} />
           </QueryClientProvider>
         )}
         <p className="mt-6 text-xs leading-5 text-slate-500">Approval records a review decision. Publication is a separate action.</p>
@@ -76,7 +78,7 @@ export function ReviewerInbox({ onClose }: { onClose: () => void }) {
   )
 }
 
-function DraftBrowser({ token, onUnauthorized }: { token: string; onUnauthorized: (message: string) => void }) {
+function DraftBrowser({ token, onUnauthorized, onPublished }: { token: string; onUnauthorized: (message: string) => void; onPublished: () => void }) {
   const [selected, setSelected] = useState<string | null>(null)
   const [status, setStatus] = useState<PrivateDraft['status']>('pending_review')
   const query = useQuery({ queryKey: ['reviewer-drafts', status], queryFn: ({ signal }) => fetchPrivateDrafts(token, signal, status) })
@@ -115,22 +117,46 @@ function DraftBrowser({ token, onUnauthorized }: { token: string; onUnauthorized
         </ul>
       )}
       <p className="text-xs text-slate-500">Up to 20 most recently imported drafts with this status.</p>
-      {selected && <DraftDetails key={selected} id={selected} token={token} onUnauthorized={onUnauthorized} />}
+      {selected && <DraftDetails key={selected} id={selected} token={token} onUnauthorized={onUnauthorized} onPublished={onPublished} />}
     </div>
   )
 }
 
-function DraftDetails({ id, token, onUnauthorized }: { id: string; token: string; onUnauthorized: (message: string) => void }) {
+function DraftDetails({ id, token, onUnauthorized, onPublished }: { id: string; token: string; onUnauthorized: (message: string) => void; onPublished: () => void }) {
   const client = useQueryClient()
   const [note, setNote] = useState('')
   const query = useQuery({ queryKey: ['reviewer-draft', id], queryFn: ({ signal }) => fetchPrivateDraft(id, token, signal) })
   const review = useMutation({ mutationFn: (decision: ReviewDecision) => submitPrivateReview(id, token, decision), retry: false })
+  const publication = useMutation({ mutationFn: () => publishPrivateDraft(id, token), retry: false })
   useEffect(() => {
     if (query.error instanceof ReviewerAccessError) onUnauthorized(query.error.message)
   }, [query.error, onUnauthorized])
   const data = query.isError ? undefined : query.data
+  const saving = review.isPending || publication.isPending
+  function refreshAfterError(error: Error) {
+    if (error instanceof ReviewerAccessError) onUnauthorized(error.message)
+    else {
+      void client.resetQueries({ queryKey: ['reviewer-draft', id], exact: true })
+      void client.invalidateQueries({ queryKey: ['reviewer-drafts'] })
+    }
+  }
+  function publish() {
+    if (!data || data.status !== 'approved' || data.freshness !== 'current' || data.is_published || saving || query.isFetching) return
+    publication.mutate(undefined, {
+      onSuccess: (result) => {
+        client.setQueryData(['reviewer-draft', id], result)
+        onPublished()
+      },
+      onError: (error) => {
+        refreshAfterError(error)
+        // A lost response may follow a successful commit. Refresh only public
+        // reads; never copy private response data into the dashboard cache.
+        onPublished()
+      },
+    })
+  }
   function decide(decision: ReviewDecision['decision']) {
-    if (!data || data.status !== 'pending_review' || !note.trim() || review.isPending || query.isFetching) return
+    if (!data || data.status !== 'pending_review' || !note.trim() || saving || query.isFetching) return
     review.mutate({ decision, note: note.trim() }, {
       // Per-call callbacks run only while this observer remains mounted.
       onSuccess: (result) => {
@@ -138,22 +164,17 @@ function DraftDetails({ id, token, onUnauthorized }: { id: string; token: string
         client.setQueryData(['reviewer-draft', id], result)
         void client.invalidateQueries({ queryKey: ['reviewer-drafts'] })
       },
-      onError: (error) => {
-        if (error instanceof ReviewerAccessError) onUnauthorized(error.message)
-        else {
-          void client.resetQueries({ queryKey: ['reviewer-draft', id], exact: true })
-          void client.invalidateQueries({ queryKey: ['reviewer-drafts'] })
-        }
-      },
+      onError: refreshAfterError,
     })
   }
   return (
-    <section aria-labelledby="private-draft-heading" className="space-y-4 border-t border-slate-200 pt-5" aria-busy={query.isFetching || review.isPending}>
+    <section aria-labelledby="private-draft-heading" className="space-y-4 border-t border-slate-200 pt-5" aria-busy={query.isFetching || saving}>
       <h3 id="private-draft-heading" className="text-sm font-semibold text-slate-900">Draft details</h3>
       {query.isPending && <p role="status" className="text-sm text-slate-500">Loading private report…</p>}
       {query.isError && <p role="alert" className="text-sm text-amber-900">{query.error.message}</p>}
       {review.isError && <p role="alert" className="text-sm text-amber-900">{review.error.message}</p>}
-      {review.isSuccess && <p role="status" className="text-sm text-emerald-800">Review recorded. The public report is unchanged.</p>}
+      {publication.isError && <p role="alert" className="text-sm text-amber-900">{publication.error.message}</p>}
+      {review.isSuccess && !publication.isPending && !data?.is_published && <p role="status" className="text-sm text-emerald-800">Review recorded. The public report is unchanged.</p>}
       {data && <>
         <p className="text-xs text-indigo-700">AI-generated draft · {data.status.replaceAll('_', ' ')}</p>
         {data.freshness !== 'current' ? <p role="status" className="text-xs leading-5 text-amber-900">This draft can no longer be verified. Its report is hidden.</p> : data.report && <>
@@ -183,8 +204,17 @@ function DraftDetails({ id, token, onUnauthorized }: { id: string; token: string
             <p className="whitespace-pre-wrap break-words">{data.review_note}</p>
           </div>
         )}
+        {data.is_published ? <p role="status" className="text-sm text-emerald-800">This draft is the current public report.</p> : data.status === 'approved' && (
+          <div className="space-y-3 border-t border-slate-200 pt-4">
+            <p className="text-xs leading-5 text-slate-600">Publishing makes this report and its cited excerpts public, replacing the existing report for this run. Your review note stays private.</p>
+            <button className="button" type="button" onClick={publish}
+              disabled={saving || query.isFetching || data.freshness !== 'current'}>
+              {publication.isPending ? 'Publishing…' : 'Publish approved draft'}
+            </button>
+          </div>
+        )}
       </>}
-      <button className="button" type="button" onClick={() => void query.refetch()} disabled={query.isFetching || review.isPending}>Refresh private report</button>
+      <button className="button" type="button" onClick={() => void query.refetch()} disabled={query.isFetching || saving}>Refresh private report</button>
     </section>
   )
 }

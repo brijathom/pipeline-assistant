@@ -125,14 +125,14 @@ def publish_draft(session: Session, draft_id: UUID) -> None:
     """Publish only an approved, unchanged document with current curated evidence."""
     draft = session.get(PipelineInvestigationDraft, draft_id, with_for_update=True, populate_existing=True)
     if draft is None:
-        raise DraftReviewError("Private draft not found.")
+        raise DraftReviewError("Private draft not found.", status_code=404)
     if draft.status != "approved":
         raise DraftReviewError("Only an approved draft can be published.")
     document = validate_stored_draft(draft)
     # Serialize publishers for the same run. No network or model call occurs
     # while these locks are held. The public read path also rechecks freshness.
     if session.get(PipelineRun, draft.pipeline_run_id, with_for_update=True, populate_existing=True) is None:
-        raise DraftReviewError("Stored run not found.")
+        raise DraftReviewError("Stored run not found.", status_code=404)
     _require_current_evidence(session, draft.pipeline_run_id, draft.evidence_fingerprint)
     statement = insert(PipelineInvestigation).values(
         pipeline_run_id=draft.pipeline_run_id, generation_method=document.generation_method,

@@ -250,3 +250,90 @@ def test_missing_web_review_target_is_404(reviewer_client: TestClient) -> None:
     response = reviewer_client.post(f"/api/reviewer/drafts/{uuid4()}/review", headers=AUTH,
                                     json={"decision": "rejected", "note": "Not present"})
     assert response.status_code == 404
+
+
+def test_web_publication_is_explicit_idempotent_and_excludes_private_audit(
+    reviewer_client: TestClient, db_session: Session, private_draft,
+) -> None:
+    review_draft(db_session, private_draft, "approved", "operator", "Private review note marker")
+    path = f"/api/reviewer/drafts/{private_draft}"
+    draft = db_session.get(PipelineInvestigationDraft, private_draft)
+    public_path = f"/api/runs/{draft.pipeline_run_id}/investigation"
+    assert reviewer_client.get(path, headers=AUTH).json()["is_published"] is False
+    assert reviewer_client.get(public_path).json()["generation_method"] == "rules-v1"
+    response = reviewer_client.post(path + "/publish", headers=AUTH)
+    assert response.status_code == 200 and response.json()["is_published"] is True
+    assert response.headers["cache-control"] == "no-store" and "Authorization" in response.headers["vary"]
+    public = reviewer_client.get(public_path)
+    assert public.json()["status"] == "ready" and public.json()["generation_method"] == "google-adk-v1"
+    assert public.json()["report"] == response.json()["report"]
+    assert all(value not in public.text for value in (str(private_draft), "Private review note marker", TOKEN, "reviewed_by"))
+    assert reviewer_client.post(path + "/publish", headers=AUTH).json()["is_published"] is True
+    assert reviewer_client.get(public_path).json() == public.json()
+    assert reviewer_client.get(path, headers=AUTH).json()["is_published"] is True
+
+
+@pytest.mark.parametrize("state", ["pending_review", "rejected", "stale", "invalid"])
+def test_blocked_publication_preserves_existing_public_report(
+    reviewer_client: TestClient, db_session: Session, private_draft, state: str,
+) -> None:
+    draft = db_session.get(PipelineInvestigationDraft, private_draft)
+    if state != "pending_review":
+        review_draft(db_session, private_draft, "rejected" if state == "rejected" else "approved", "operator", "Checked")
+    if state == "stale":
+        db_session.get(PipelineJobLog, draft.document["evidence_snapshot"]["jobs"][0]["job_id"]).is_curated = False
+    if state == "invalid":
+        draft.document = {**draft.document, "prompt_version": "modified"}
+    db_session.flush()
+    before = db_session.get(PipelineInvestigation, draft.pipeline_run_id).report.copy()
+    response = reviewer_client.post(f"/api/reviewer/drafts/{private_draft}/publish", headers=AUTH)
+    assert response.status_code == 409 and response.headers["cache-control"] == "no-store"
+    assert "Private model report marker" not in response.text
+    public = db_session.get(PipelineInvestigation, draft.pipeline_run_id, populate_existing=True)
+    assert public.report == before and public.generation_method == "rules-v1" and public.source_draft_id is None
+
+
+def test_publication_authentication_precedes_database_access(reviewer_client: TestClient) -> None:
+    def forbidden_session():
+        pytest.fail("Unauthenticated publication must not acquire a database session")
+        yield
+    original = app.dependency_overrides[get_session]
+    app.dependency_overrides[get_session] = forbidden_session
+    try:
+        response = reviewer_client.post(f"/api/reviewer/drafts/{uuid4()}/publish")
+        assert response.status_code == 401 and response.headers["cache-control"] == "no-store"
+    finally:
+        app.dependency_overrides[get_session] = original
+
+
+def test_missing_publication_target_is_404(reviewer_client: TestClient) -> None:
+    assert reviewer_client.post(f"/api/reviewer/drafts/{uuid4()}/publish", headers=AUTH).status_code == 404
+
+
+def test_failed_publication_commit_restores_previous_public_report(
+    reviewer_client: TestClient, db_session: Session, private_draft, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    review_draft(db_session, private_draft, "approved", "operator", "Checked")
+    run_id = db_session.get(PipelineInvestigationDraft, private_draft).pipeline_run_id
+    db_session.commit()
+    def fail_commit():
+        raise SQLAlchemyError("private-publication-error")
+    monkeypatch.setattr(db_session, "commit", fail_commit)
+    response = reviewer_client.post(f"/api/reviewer/drafts/{private_draft}/publish", headers=AUTH)
+    assert response.status_code == 503 and "private-publication-error" not in response.text
+    public = db_session.get(PipelineInvestigation, run_id)
+    assert public.generation_method == "rules-v1" and public.source_draft_id is None
+    assert db_session.get(PipelineInvestigationDraft, private_draft).status == "approved"
+
+
+def test_published_indicator_clears_after_evidence_is_withdrawn(
+    reviewer_client: TestClient, db_session: Session, private_draft,
+) -> None:
+    review_draft(db_session, private_draft, "approved", "operator", "Checked")
+    path = f"/api/reviewer/drafts/{private_draft}"
+    assert reviewer_client.post(path + "/publish", headers=AUTH).json()["is_published"] is True
+    draft = db_session.get(PipelineInvestigationDraft, private_draft)
+    db_session.get(PipelineJobLog, draft.document["evidence_snapshot"]["jobs"][0]["job_id"]).is_curated = False
+    db_session.flush()
+    current = reviewer_client.get(path, headers=AUTH).json()
+    assert current["freshness"] == "stale" and current["is_published"] is False and current["report"] is None

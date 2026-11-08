@@ -621,14 +621,19 @@ These are trusted local developer commands, with a self-reported reviewer name;
 they do not provide authenticated identity or tamper-proof audit history. Draft
 documents are unchanged by review. Approval records a decision only: the public
 rule-based report is preserved, no workflow action runs, and no model is called.
-No public draft/review endpoint is exposed. Authenticated web review remains
-in progress: the protected inbox below supports web decisions, while publication
-still uses a local command.
+No public draft/review endpoint is exposed. The protected inbox below supports
+web decisions and explicit publication; the local commands remain available.
 
 ### Publishing an approved draft
 
-After reviewing and approving a draft, publication is a separate explicit local
-action. Apply migration `0006` with `alembic upgrade head`, then run from `backend`:
+After reviewing and approving a draft, choose **Publish approved draft** in the
+protected inbox. This makes the report and cited excerpts public, replacing the
+existing report for that run; review notes and reviewer details remain private.
+The inbox shows when this draft is the current public report. Stale evidence
+disables publication, and the server rechecks evidence at publication time.
+
+Alternatively, apply migration `0006` with `alembic upgrade head`, then run the
+local command from `backend`:
 
 ```powershell
 .\.venv\Scripts\python.exe -m app.review_draft publish --draft-id DRAFT_UUID
@@ -704,19 +709,30 @@ choose a reviewer or timestamp. The shared domain service locks and refreshes th
 draft, enforces a final decision, and rechecks integrity and current evidence for
 approval. Stale/invalid drafts can still be rejected. The transaction commits
 before success is returned; failed commits roll back. A successful review leaves
-the public report unchanged. Publication remains a separate local command.
+the public report unchanged. Publication is a separate explicit action.
+
+`POST /api/reviewer/drafts/{uuid}/publish` uses the same bearer authentication
+and needs no request body. It reuses the local publication service: only approved,
+intact drafts with current curated evidence can replace the public report. It
+commits before returning the refreshed private detail, including `is_published`.
+Repeating the request produces the same report and original generation time;
+it does not call a model or GitHub. The UI refreshes public investigation queries
+after publication without copying private data into the public cache. The
+published indicator is verified again on detail reads; withdrawn evidence hides
+the public report and clears the indicator.
 
 Missing drafts return 404; stale evidence, altered content and already-reviewed
 drafts return 409. Invalid request bodies return a generic 422 without echoing
 private notes. Missing/invalid credentials return 401, and disabled access or
 database availability errors return 503. The UI requires a note, disables repeated
 submissions while saving, and refreshes status after a conflict or uncertain
-failure. Decisions are not optimistically applied or automatically retried.
+failure. Neither review nor publication is optimistically applied or automatically
+retried. A failed publication commit rolls back the public report change.
 
 The browser holds the credential only in the open inbox's React state. A separate
 TanStack Query client isolates private data from the public dashboard cache.
 Locking or closing cancels reads and clears the private cache; each unlock creates
-a new private query client. Submitted decisions may still complete on the server
+a new private query client. Submitted decisions or publications may still complete on the server
 after closing or a lost response, so reopen and check the status before retrying.
 Per-call mutation callbacks stop updating the view after it unmounts. An
 authentication failure locks the inbox. Tokens never enter query keys, URLs,
@@ -729,7 +745,7 @@ This is single-operator access, not individual user accounts or an authenticated
 person identity. Anyone possessing the token can read and review private drafts;
 web review records the authenticated role `operator`, not a verified personal name.
 Production deployment must use HTTPS and managed secret configuration; those checks remain
-in milestone 12. Protected web publication is the next part of milestone 8.
+in milestone 12. Imported real-log evidence curation is the remaining part of milestone 8.
 
 ## Test
 

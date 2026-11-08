@@ -23,7 +23,7 @@ percentage. A milestone is complete only when its listed outcomes are verified.
   - [x] Single-operator protected draft inbox and private report viewer; no token
     persistence, private cache isolation and authorization tests.
   - [x] Approve/reject through the UI with a server-assigned operator identity.
-  - [ ] Explicit protected publication through the UI and conflict/error handling.
+  - [x] Explicit protected publication through the UI and conflict/error handling.
   - [ ] Operator-controlled review/curation of imported real log evidence.
 - [ ] **9. AI quality evaluation:** repeatable cases for diagnostics, incomplete
   evidence and adversarial logs; recorded factuality/citation/safety results,
@@ -36,9 +36,9 @@ percentage. A milestone is complete only when its listed outcomes are verified.
   managed PostgreSQL/migrations, IAM/secrets, logs/health checks, access/rate/cost
   controls, deployment CI, public demo and documented operational trade-offs.
 
-Current next step: explicit protected publication through the UI. Private web
-review decisions are complete; publication and real-log curation still keep
-milestone 8 open.
+Current next step: operator-controlled review/curation of imported real log
+evidence. Protected web review and explicit publication are complete; real-log
+curation keeps milestone 8 open.
 
 BigQuery and additional identity providers are optional choices, not completion
 requirements. Multi-user accounts are outside this personal single-operator

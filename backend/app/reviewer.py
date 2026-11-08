@@ -1,4 +1,4 @@
-"""Protected draft inbox and review decisions. Never publishes or calls AI."""
+"""Protected draft inbox, review and explicit publication. Never calls AI."""
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -9,9 +9,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import get_session
-from app.draft_reviews import DraftReviewError, review_draft, validate_stored_draft
-from app.investigations import collect_evidence, evidence_fingerprint
-from app.models import PipelineInvestigationDraft, PipelineRun
+from app.draft_reviews import DraftReviewError, publish_draft, review_draft, validate_stored_draft
+from app.investigations import collect_evidence, evidence_fingerprint, find_investigation
+from app.models import PipelineInvestigation, PipelineInvestigationDraft, PipelineRun
 from app.reviewer_auth import PRIVATE_HEADERS, ReviewerPrincipal, require_reviewer
 from app.schemas import ReviewerDecisionRequest, ReviewerDraftDetails, ReviewerDraftSummary
 
@@ -61,8 +61,15 @@ def get_private_draft(
         return ReviewerDraftDetails(**summary, freshness="invalid")
     if evidence_fingerprint(collect_evidence(session, run)) != draft.evidence_fingerprint:
         return ReviewerDraftDetails(**summary, freshness="stale")
+    public = session.get(PipelineInvestigation, run.id, populate_existing=True)
+    is_published = False
+    if public is not None and public.source_draft_id == draft.id:
+        try:
+            is_published = find_investigation(session, run).status == "ready"
+        except ValidationError:
+            pass  # A malformed public copy is not a verified publication.
     return ReviewerDraftDetails(
-        **summary, freshness="current", model=document.model,
+        **summary, freshness="current", is_published=is_published, model=document.model,
         generated_at=document.generated_at, report=document.report,
     )
 
@@ -85,4 +92,23 @@ def decide_private_draft(
     except SQLAlchemyError:
         session.rollback()
         raise HTTPException(503, "Could not save the review. Reload to verify its status before trying again.", headers=PRIVATE_HEADERS) from None
+    return result
+
+
+@router.post("/drafts/{draft_id}/publish", response_model=ReviewerDraftDetails)
+def publish_private_draft(
+    draft_id: UUID, session: Annotated[Session, Depends(get_session)], response: Response,
+) -> ReviewerDraftDetails:
+    response.headers.update(PRIVATE_HEADERS)
+    try:
+        publish_draft(session, draft_id)
+        result = get_private_draft(draft_id, session, response)
+        session.commit()
+    except DraftReviewError as error:
+        raise HTTPException(error.status_code, str(error), headers=PRIVATE_HEADERS) from None
+    except (ValidationError, ValueError):
+        raise HTTPException(409, "Stored draft cannot be verified. Reload before publishing.", headers=PRIVATE_HEADERS) from None
+    except SQLAlchemyError:
+        session.rollback()
+        raise HTTPException(503, "Could not confirm publication. Reload to verify its status before trying again.", headers=PRIVATE_HEADERS) from None
     return result
