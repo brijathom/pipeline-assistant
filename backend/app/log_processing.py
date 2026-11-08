@@ -110,7 +110,7 @@ def process_log(
 ) -> LogExcerpt:
     """Process complete UTF-8 input before selecting a bounded, numbered excerpt.
 
-    Oversized input is rejected, never sliced before redaction. The future
+    Oversized input is rejected, never sliced before redaction. The
     downloader must also enforce the input cap while receiving network bytes.
     The output byte cap covers joined UTF-8 text, including separators/markers,
     rather than the metadata envelope. Limits can be reduced but not increased.

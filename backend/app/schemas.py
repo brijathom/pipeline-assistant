@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -47,3 +48,17 @@ class PipelineJobResponse(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     steps: list[PipelineJobStepResponse]
+
+
+class LogLineResponse(BaseModel):
+    source_line: int
+    text: str
+
+
+class PipelineJobLogResponse(BaseModel):
+    lines: list[LogLineResponse]
+    total_source_lines: int
+    truncated: bool
+    redactions_applied: bool
+    source_kind: Literal["github", "demo"]
+    updated_at: datetime

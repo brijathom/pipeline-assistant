@@ -1,13 +1,29 @@
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import PipelineJob, PipelineJobStep, PipelineRun
-from app.schemas import PipelineJobResponse, PipelineJobStepResponse, PipelineMetricsResponse
+from app.models import PipelineJob, PipelineJobLog, PipelineJobStep, PipelineRun
+from app.schemas import (
+    LogLineResponse, PipelineJobLogResponse, PipelineJobResponse, PipelineJobStepResponse, PipelineMetricsResponse,
+)
 
 
 def find_run(session: Session, run_id: int) -> PipelineRun | None:
     """Find one stored attempt by its local primary key."""
     return session.get(PipelineRun, run_id)
+
+
+def find_curated_job_log(session: Session, job_id: int) -> PipelineJobLogResponse | None:
+    record = session.scalar(select(PipelineJobLog).where(
+        PipelineJobLog.pipeline_job_id == job_id, PipelineJobLog.is_curated.is_(True),
+    ))
+    if record is None:
+        return None
+    texts = record.text.split("\n") if record.line_count else []
+    return PipelineJobLogResponse(
+        lines=[LogLineResponse(source_line=record.start_line + index, text=text) for index, text in enumerate(texts)],
+        total_source_lines=record.total_source_lines, truncated=record.truncated,
+        redactions_applied=record.redactions_applied, source_kind=record.source_kind, updated_at=record.updated_at,
+    )
 
 
 def list_run_jobs(session: Session, run_id: int) -> list[PipelineJobResponse]:

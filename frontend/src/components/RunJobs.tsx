@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { fetchRunJobs } from '../api/jobs'
 import { RunNotFoundError } from '../api/runs'
 import { readable } from '../format'
+import { JobLog } from './JobLog'
 import { ResultBadge } from './ResultBadge'
 import { SourceTime } from './SourceTime'
 
@@ -89,6 +90,7 @@ export function RunJobs({ runId }: { runId: number }) {
                         </ol>
                       </details>
                     )}
+                    <JobLog runId={runId} jobId={job.id} />
                   </article>
                 )
               })}

@@ -7,7 +7,9 @@ An AI-assisted CI/CD reliability and investigation platform, starting with GitHu
 The backend exposes a health endpoint and interactive API documentation, with
 SQLAlchemy models and an Alembic migration for pipeline runs in PostgreSQL.
 Fictional demo data, read-only ingestion of public GitHub Actions runs, runs and
-metrics APIs, and a React dashboard are included. AI investigations are planned.
+metrics APIs, job/step evidence, bounded log imports, and a React dashboard are
+included. Curated fictional log excerpts are available in run details. AI
+investigations are planned.
 
 ## Backend setup
 
@@ -175,6 +177,13 @@ steps, while deleting a job removes its steps. These rules apply to local stored
 data. The job importer below populates this evidence, and the run-details panel
 displays the stored jobs and steps for the selected attempt.
 
+Migration `0003` adds `pipeline_job_logs`, with one current processed excerpt per
+job. The primary key is also a cascading foreign key to its job. PostgreSQL checks
+the 16 KiB text limit, 100-line limit, source range, and evidence source kind.
+Stored fields include the first source line, line count, total source lines,
+truncation/redaction flags, curation flag, and update timestamp. There is no raw
+log or signed-download-URL column. Removing a local job or run removes its excerpt.
+
 SQLAlchemy uses synchronous sessions, intended to be supplied per request via
 `get_session`. Write operations must commit explicitly. Sessions close after use
 and roll back uncommitted work. `/health` does not access the database and still
@@ -198,6 +207,9 @@ After migrating the local development database, run from `backend`:
 This explicitly inserts three fictional runs (successful, failed, and in progress)
 for `demo/pipeline-assistant`. It never calls GitHub. Running it again preserves
 existing rows and inserts no duplicates. Seed data is not inserted at API startup.
+The failed run, GitHub ID `1002`, also receives a fictional job, two steps, and a
+curated processed excerpt. Filter the dashboard to `demo/pipeline-assistant`, open
+the failed run, and select **View log excerpt** to explore it.
 
 `GET /api/runs` returns a JSON array
 of runs ordered by creation time descending, then ID descending. `limit` defaults
@@ -216,7 +228,7 @@ Details show the repository, GitHub run ID, attempt, status, conclusion, and
 available source timestamps in UTC. Missing timestamps remain unavailable;
 completion times and durations are not inferred. This is a stored snapshot;
 opening or refreshing details does not contact GitHub. The jobs section loads
-stored evidence independently; logs are not included yet.
+stored evidence independently. Each job has an on-demand log excerpt viewer.
 
 The panel has independent loading, retry, and not-found states. Failed refreshes
 retain cached details with a warning; a 404 hides them and is not automatically
@@ -238,6 +250,21 @@ collapsed. Jobs with no steps and unknown timestamps have explicit empty states.
 empty result. The jobs section has independent loading and retry states and
 retains cached evidence with a warning if a refresh fails. **Refresh details**
 reloads both run metadata and jobs; it does not trigger an import.
+
+**View log excerpt** fetches `GET /api/runs/{run_id}/jobs/{job_id}/log` using local
+database IDs. The endpoint checks the job belongs to that run attempt and returns
+HTTP 404 for a missing or mismatched job. For an existing job, both missing and
+uncurated excerpts return JSON `null`, without exposing their contents or metadata.
+Curated excerpts include numbered lines, source line count, truncation/redaction
+flags, evidence source, and update time. An empty curated log is an object with an
+empty line array, distinct from an unavailable excerpt. Responses use `no-store`.
+
+The viewer renders plain text with source line numbers, marks fictional evidence
+and partial excerpts, and wraps long lines on mobile. Loading and retry are local
+to the selected job. **Refresh log** reloads stored evidence without contacting
+GitHub; a transient failure retains cached evidence with a warning. A successful
+`null` response or HTTP 404 clears previously displayed evidence. It has its own
+query cache keyed by run and job; **Refresh details** refreshes run/jobs metadata.
 
 ### Reliability metrics
 
@@ -347,7 +374,7 @@ Sensitive assignments conservatively mask the remainder of their line.
 Redaction runs on the complete bounded input before selecting or shortening an
 excerpt, preserving context such as a private-key header outside the selected
 lines. Oversized or invalid UTF-8 input is rejected with errors that omit log
-contents. A future downloader must enforce the input cap while receiving bytes.
+contents. The downloader also enforces the input cap while receiving bytes.
 
 Excerpts contain at most 100 lines and 16 KiB of joined UTF-8 text, including
 newline separators and truncation markers. Each line retains its one-based
@@ -384,8 +411,31 @@ bodies and signed URLs, which can contain temporary access credentials.
 
 Raw bytes stay in memory and pass through `process_log` before anything is
 returned to the caller. HTTP tests use mocked streams and synthetic content;
-they do not contact GitHub. Persistence, an import command, API responses, and
-display are still to come; dashboard refresh does not download logs.
+they do not contact GitHub. Dashboard refresh does not download logs.
+
+### Store a processed job-log excerpt
+
+After migrating and importing jobs, choose a local job ID from
+`GET /api/runs/{id}/jobs`. From `backend`, replace `123` with that local job ID:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.import_logs --job-id 123 --start-line 1
+```
+
+The command derives the repository and GitHub job ID from the stored job/run,
+rejects missing and fictional sources before network access, and closes the read
+session before downloading. Once processing succeeds, a short transaction locks
+and rechecks both source identities, then atomically replaces that job's excerpt.
+A failed download or write preserves previous evidence. Raw bytes and excerpt
+contents are not printed; only processed text and metadata are persisted.
+
+Every GitHub import sets `is_curated` to false, including replacement of a
+previously curated excerpt. Redaction alone never publishes new content. Since
+the API currently has no authentication, it serves only curated evidence; the
+fictional seeder is currently the only publication path provided by the app.
+There is no real-log curation command or review UI yet. Imported GitHub excerpts
+remain hidden from the public API, and there is no visitor-triggered import
+endpoint. A curation workflow will be added with access controls.
 
 ## Test
 

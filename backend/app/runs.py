@@ -1,13 +1,14 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_session
-from app.models import PipelineRun
-from app.queries import find_run, list_run_jobs, list_runs
+from app.models import PipelineJob, PipelineRun
+from app.queries import find_curated_job_log, find_run, list_run_jobs, list_runs
 from app.repositories import RepositoryName
-from app.schemas import PipelineJobResponse, PipelineRunResponse
+from app.schemas import PipelineJobLogResponse, PipelineJobResponse, PipelineRunResponse
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
@@ -40,3 +41,18 @@ def get_run_jobs(
     if find_run(session, run_id) is None:
         raise HTTPException(status_code=404, detail="Pipeline run not found")
     return list_run_jobs(session, run_id)
+
+
+@router.get("/{run_id}/jobs/{job_id}/log", response_model=PipelineJobLogResponse | None)
+def get_job_log(
+    run_id: Annotated[int, Path(gt=0, le=9_223_372_036_854_775_807)],
+    job_id: Annotated[int, Path(gt=0, le=9_223_372_036_854_775_807)],
+    session: Annotated[Session, Depends(get_session)],
+    response: Response,
+) -> PipelineJobLogResponse | None:
+    response.headers["Cache-Control"] = "no-store"
+    if session.scalar(select(PipelineJob.id).where(
+        PipelineJob.id == job_id, PipelineJob.pipeline_run_id == run_id,
+    )) is None:
+        raise HTTPException(status_code=404, detail="Pipeline job not found for this run")
+    return find_curated_job_log(session, job_id)

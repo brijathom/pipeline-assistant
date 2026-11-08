@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
-    BigInteger, CheckConstraint, DateTime, ForeignKey, Identity, String, Text,
+    BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Identity, String, Text,
     UniqueConstraint, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -66,3 +66,30 @@ class PipelineJobStep(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PipelineJobLog(Base):
+    __tablename__ = "pipeline_job_logs"
+    __table_args__ = (
+        CheckConstraint("octet_length(text) <= 16384", name="ck_pipeline_job_logs_bytes"),
+        CheckConstraint("line_count BETWEEN 0 AND 100", name="ck_pipeline_job_logs_lines"),
+        CheckConstraint(
+            "start_line >= 1 AND total_source_lines >= 0 AND start_line + line_count - 1 <= total_source_lines",
+            name="ck_pipeline_job_logs_source_range",
+        ),
+        CheckConstraint("source_kind IN ('github', 'demo')", name="ck_pipeline_job_logs_source_kind"),
+    )
+
+    pipeline_job_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("pipeline_jobs.id", name="fk_pipeline_job_logs_job", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    text: Mapped[str] = mapped_column(Text)
+    start_line: Mapped[int] = mapped_column()
+    line_count: Mapped[int] = mapped_column()
+    total_source_lines: Mapped[int] = mapped_column()
+    truncated: Mapped[bool] = mapped_column(Boolean)
+    redactions_applied: Mapped[bool] = mapped_column(Boolean)
+    source_kind: Mapped[str] = mapped_column(String(20))
+    is_curated: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
