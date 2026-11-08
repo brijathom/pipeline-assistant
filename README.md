@@ -356,8 +356,36 @@ omitted, and whether redaction patterns matched. Callers can reduce the limits.
 
 Pattern matching cannot identify every secret, including arbitrary unlabelled
 values. It is not proof that output is safe to publish; use curated evidence for
-the public demo or an AI provider. This foundation uses synthetic tests only;
-log retrieval, persistence, API responses, and display are still to come.
+the public demo or an AI provider. Processing tests use synthetic logs only.
+
+### Bounded job-log retrieval
+
+`fetch_job_log_excerpt` in `backend/app/github.py` retrieves one public GitHub
+job's logs and returns a processed `LogExcerpt`. Callers provide a validated
+repository and GitHub job ID, with an optional starting source line. The function
+confirms the repository is public and makes unauthenticated GET requests only.
+
+GitHub's [job-log endpoint](https://docs.github.com/en/rest/actions/workflow-jobs#download-job-logs-for-a-workflow-run)
+returns a 302 with a temporary download URL. Only an absolute HTTPS URL on port
+443 under `*.actions.githubusercontent.com` or an Azure Blob storage account
+under `*.blob.core.windows.net` is accepted. These hosts reflect GitHub's
+[documented Actions infrastructure](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#communication-requirements-for-github-hosted-runners).
+Azure Blob storage is shared infrastructure; the URL must come directly from the
+trusted GitHub API response, never from a visitor. Credentials in the URL's
+authority, fragments, and further redirects are rejected. A separate HTTP client
+downloads the content without forwarding API headers or cookies.
+
+The downloader requests uncompressed content and enforces the 1 MiB limit while
+streaming, even when `Content-Length` is absent or misleading. It rejects encoded,
+oversized, or incomplete responses rather than processing partial evidence.
+Connections time out after five seconds; individual reads time out after ten
+seconds. Requests are not automatically retried. Download errors omit response
+bodies and signed URLs, which can contain temporary access credentials.
+
+Raw bytes stay in memory and pass through `process_log` before anything is
+returned to the caller. HTTP tests use mocked streams and synthetic content;
+they do not contact GitHub. Persistence, an import command, API responses, and
+display are still to come; dashboard refresh does not download logs.
 
 ## Test
 

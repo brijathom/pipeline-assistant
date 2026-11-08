@@ -1,7 +1,11 @@
-"""Read-only, bounded access to public GitHub Actions runs and jobs."""
+"""Read-only, bounded access to public GitHub Actions runs, jobs, and log excerpts."""
+import re
+from urllib.parse import urlsplit
+
 import httpx
 from pydantic import AwareDatetime, BaseModel, Field, ValidationError
 
+from app.log_processing import MAX_INPUT_BYTES, LogExcerpt, LogProcessingError, process_log
 from app.repositories import normalize_repository
 
 JOBS_PER_PAGE = 100
@@ -76,6 +80,13 @@ def _get(client: httpx.Client, path: str, **params: int) -> httpx.Response:
     except httpx.RequestError:
         raise GitHubError("Could not reach GitHub. Check your connection and try again.") from None
 
+    _check_status(response)
+    return response
+
+
+def _check_status(response: httpx.Response, *, expected: int = 200) -> None:
+    if response.status_code == expected:
+        return
     if response.status_code == 429 or (
         response.status_code == 403
         and (response.headers.get("x-ratelimit-remaining") == "0" or "retry-after" in response.headers)
@@ -85,9 +96,7 @@ def _get(client: httpx.Client, path: str, **params: int) -> httpx.Response:
         raise GitHubError("Public repository or Actions data not found. Check the repository, run ID and attempt.")
     if response.is_redirect:
         raise GitHubError("GitHub redirected this repository. Configure its current owner/name.")
-    if response.status_code != 200:
-        raise GitHubError(f"GitHub API request failed (HTTP {response.status_code}).")
-    return response
+    raise GitHubError(f"GitHub API request failed (HTTP {response.status_code}).")
 
 
 def fetch_workflow_runs(
@@ -164,3 +173,92 @@ def fetch_workflow_jobs(
         except (ValidationError, ValueError):
             raise GitHubError("GitHub returned an invalid repository or job response.") from None
     raise GitHubError("Could not fetch the complete job snapshot. No jobs were saved.")
+
+
+def _log_download_url(location: str) -> str:
+    # Only accept a Location obtained directly from GitHub's log endpoint, never
+    # a caller-supplied URL. Blob storage is shared infrastructure, not proof of
+    # GitHub ownership; the trusted API response is part of this boundary.
+    try:
+        url = urlsplit(location)
+        host = url.hostname or ""
+        allowed_host = re.fullmatch(
+            r"(?:[a-z0-9-]+\.)+actions\.githubusercontent\.com|[a-z0-9]{3,24}\.blob\.core\.windows\.net",
+            host,
+        )
+        if (
+            not location or len(location) > 8192
+            or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in location)
+            or "\\" in location or url.scheme != "https" or not allowed_host
+            or url.port not in (None, 443) or url.username is not None
+            or url.password is not None or url.fragment
+        ):
+            raise ValueError
+    except ValueError:
+        raise GitHubError("GitHub returned an unsupported log download URL.") from None
+    return location
+
+
+def fetch_job_log_excerpt(
+    repository: str,
+    job_id: int,
+    *,
+    start_line: int = 1,
+    transport: httpx.BaseTransport | None = None,
+) -> LogExcerpt:
+    """Fetch one public job log into memory and return only a processed excerpt.
+
+    No authentication, retries, disk writes, or automatic redirects. The only
+    allowed redirect is GitHub's initial 302 to a validated HTTPS log host.
+    Raw logs and signed URLs must never be persisted or included in diagnostics.
+    """
+    repository = normalize_repository(repository)
+    if type(job_id) is not int or not 1 <= job_id <= 9_223_372_036_854_775_807:
+        raise ValueError("GitHub job ID must be a positive PostgreSQL bigint")
+    if type(start_line) is not int or start_line < 1:
+        raise ValueError("start_line must be a positive integer")
+    try:
+        with _client(transport) as client:
+            try:
+                metadata = _Repository.model_validate(_get(client, f"repos/{repository}").json())
+            except (ValidationError, ValueError):
+                raise GitHubError("GitHub returned an invalid repository response.") from None
+            if metadata.private:
+                raise GitHubError("Only public repositories are supported by this importer.")
+            # Stream even the redirect/error response so its body is never buffered.
+            with client.stream("GET", f"repos/{repository}/actions/jobs/{job_id}/logs") as response:
+                _check_status(response, expected=302)
+                location = _log_download_url(response.headers.get("location", ""))
+
+        # Separate client: no API headers or cookies accompany the signed URL.
+        with httpx.Client(
+            headers={"Accept": "text/plain", "Accept-Encoding": "identity", "User-Agent": "Pipeline-Assistant/0.1"},
+            timeout=httpx.Timeout(10.0, connect=5.0),
+            follow_redirects=False,
+            transport=transport,
+        ) as downloader:
+            with downloader.stream("GET", location) as response:
+                if response.status_code != 200:
+                    raise GitHubError(f"Log download failed (HTTP {response.status_code}). Request a fresh download.")
+                # Reject compression rather than buffering an unbounded expansion.
+                if response.headers.get("content-encoding", "identity").lower() != "identity":
+                    raise GitHubError("Compressed log downloads are not supported.")
+                length = response.headers.get("content-length")
+                if length is not None and (len(length) > 20 or not length.isascii() or not length.isdecimal()):
+                    raise GitHubError("Log download returned an invalid content length.")
+                if length is not None and int(length) > MAX_INPUT_BYTES:
+                    raise GitHubError("Log download exceeds the 1 MiB processing limit.")
+                raw = bytearray()
+                for chunk in response.iter_raw(chunk_size=8192):
+                    if len(raw) + len(chunk) > MAX_INPUT_BYTES:
+                        raise GitHubError("Log download exceeds the 1 MiB processing limit.")
+                    raw.extend(chunk)
+                if length is not None and len(raw) != int(length):
+                    raise GitHubError("Log download was incomplete. Request a fresh download.")
+    except httpx.RequestError:
+        # Transport exceptions can contain the signed URL or other sensitive data.
+        raise GitHubError("Could not download GitHub logs. Check your connection and retry.") from None
+    try:
+        return process_log(bytes(raw), start_line=start_line)
+    except LogProcessingError:
+        raise GitHubError("Log content could not be processed. Check UTF-8 encoding and the requested source line.") from None
