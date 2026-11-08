@@ -139,9 +139,13 @@ def test_log_instructions_are_data_and_do_not_enable_tools(evidence: EvidenceBun
     assert "untrusted data" in str(model.requests[0].config.system_instruction)
 
 
-@pytest.mark.parametrize("status, finish_reason", [(200, "STOP"), (503, "STOP"), (200, "CONTINUATION")])
+@pytest.mark.parametrize("status, finish_reason", [
+    (200, "STOP"), (200, "CONTINUATION"),
+    *[(code, "STOP") for code in (400, 401, 403, 404, 429, 500, 502, 503, 504)],
+])
 def test_real_gemini_client_uses_fixed_endpoint_and_one_request_without_network(
     monkeypatch: pytest.MonkeyPatch, evidence: EvidenceBundle, status: int, finish_reason: str,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     import google.genai
 
@@ -158,11 +162,17 @@ def test_real_gemini_client_uses_fixed_endpoint_and_one_request_without_network(
         assert not body.get("tools")
         assert body["generationConfig"]["maxOutputTokens"] == 8192
         assert body["generationConfig"]["responseMimeType"] == "application/json"
+        assert "responseSchema" not in body["generationConfig"]
+        schema = body["generationConfig"]["responseJsonSchema"]
+        assert schema["additionalProperties"] is False
+        assert schema["properties"]["schema_version"]["minimum"] == 1
+        assert schema["properties"]["schema_version"]["maximum"] == 1
+        assert schema["$defs"]["InvestigationCitation"]["properties"]["quote"]["maxLength"] == 4096
         return httpx.Response(status, json={
             "candidates": [{"content": {"role": "model", "parts": [{"text": expected.model_dump_json()}]},
                             "finishReason": finish_reason,
                             **({"continuationToken": "ZmFrZQ=="} if finish_reason == "CONTINUATION" else {})}],
-        } if status == 200 else {"error": {"code": 503, "message": "provider-response-body", "status": "UNAVAILABLE"}})
+        } if status == 200 else {"error": {"code": status, "message": "provider-response-body", "status": "UNAVAILABLE"}})
 
     def client_factory(**kwargs):
         options = kwargs["http_options"]
@@ -177,4 +187,7 @@ def test_real_gemini_client_uses_fixed_endpoint_and_one_request_without_network(
         with pytest.raises(AIGenerationError) as error:
             asyncio.run(generate_ai_report(evidence, api_key=SecretStr("fake-api-key")))
         assert "fake-api-key" not in str(error.value) and "provider-response-body" not in str(error.value)
+        if status != 200:
+            assert f"HTTP {status}" in str(error.value)
+    assert "fake-api-key" not in caplog.text and "provider-response-body" not in caplog.text
     assert len(requests) == 1

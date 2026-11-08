@@ -533,12 +533,18 @@ a 45-second timeout, fixed Google endpoint, and one attempt; ADK allows one
 model call. There are no repair calls or automatic retries. These bounds limit
 work but are not a currency-based spending cap.
 
-ADK requests structured output. A small provider schema translates the numeric
-report-version constraint for the Gemini SDK; the result is then validated
-against our canonical Pydantic schema and exact source-line citations. Citation
+ADK requests structured output using Gemini's `response_json_schema` option;
+the older `response_schema` format rejects our `additionalProperties` constraint.
+A small provider schema translates the numeric report-version constraint;
+the result is then validated against our canonical Pydantic schema and exact
+source-line citations. Citation
 checks establish that quotes exist, not that every inference is correct.
 Model-error callbacks replace provider exceptions before ADK can emit their raw
 tracebacks. The application does not print prompts, reports, or API keys.
+Known provider failures produce safe HTTP-status messages that distinguish
+invalid requests, authentication, permissions, quota limits, and service outages.
+For HTTP 429, check the project's free-tier quota in AI Studio. For HTTP 503 or
+504, try the command manually later; it does not retry or save a partial draft.
 
 The command releases the database connection before generation and rechecks the
 evidence fingerprint afterward. If evidence changed, no draft is written. A
