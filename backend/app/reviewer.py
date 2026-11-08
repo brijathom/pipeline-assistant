@@ -1,18 +1,19 @@
-"""Protected draft inbox. No generation, review, publication or other writes."""
+"""Protected draft inbox and review decisions. Never publishes or calls AI."""
 from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import ValidationError
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import get_session
-from app.draft_reviews import DraftReviewError, validate_stored_draft
+from app.draft_reviews import DraftReviewError, review_draft, validate_stored_draft
 from app.investigations import collect_evidence, evidence_fingerprint
 from app.models import PipelineInvestigationDraft, PipelineRun
-from app.reviewer_auth import PRIVATE_HEADERS, require_reviewer
-from app.schemas import ReviewerDraftDetails, ReviewerDraftSummary
+from app.reviewer_auth import PRIVATE_HEADERS, ReviewerPrincipal, require_reviewer
+from app.schemas import ReviewerDecisionRequest, ReviewerDraftDetails, ReviewerDraftSummary
 
 router = APIRouter(prefix="/api/reviewer", tags=["reviewer"], dependencies=[Depends(require_reviewer)])
 
@@ -52,7 +53,8 @@ def get_private_draft(
     run = session.get(PipelineRun, draft.pipeline_run_id, populate_existing=True)
     if run is None:
         raise HTTPException(404, "Private draft not found.", headers=PRIVATE_HEADERS)
-    summary = _summary(draft, run)
+    summary = {**_summary(draft, run), "reviewed_at": draft.reviewed_at,
+               "reviewed_by": draft.reviewed_by, "review_note": draft.review_note}
     try:
         document = validate_stored_draft(draft)
     except (DraftReviewError, ValidationError, ValueError):
@@ -63,3 +65,24 @@ def get_private_draft(
         **summary, freshness="current", model=document.model,
         generated_at=document.generated_at, report=document.report,
     )
+
+
+@router.post("/drafts/{draft_id}/review", response_model=ReviewerDraftDetails)
+def decide_private_draft(
+    draft_id: UUID, decision: ReviewerDecisionRequest,
+    actor: Annotated[ReviewerPrincipal, Depends(require_reviewer)],
+    session: Annotated[Session, Depends(get_session)], response: Response,
+) -> ReviewerDraftDetails:
+    response.headers.update(PRIVATE_HEADERS)
+    try:
+        review_draft(session, draft_id, decision.decision, actor.name, decision.note)
+        result = get_private_draft(draft_id, session, response)
+        session.commit()
+    except DraftReviewError as error:
+        raise HTTPException(error.status_code, str(error), headers=PRIVATE_HEADERS) from None
+    except (ValidationError, ValueError):
+        raise HTTPException(409, "Stored draft cannot be verified. Reload before reviewing.", headers=PRIVATE_HEADERS) from None
+    except SQLAlchemyError:
+        session.rollback()
+        raise HTTPException(503, "Could not save the review. Reload to verify its status before trying again.", headers=PRIVATE_HEADERS) from None
+    return result

@@ -54,7 +54,9 @@ test('loads private evidence with header authentication and no credential persis
   expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBeTruthy()
   expect(await page.evaluate(() => JSON.stringify(localStorage) + JSON.stringify(sessionStorage))).not.toContain(token)
   expect(page.url()).not.toContain(token)
-  await expect(dialog.getByRole('button', { name: /approve|reject|publish|generate/i })).toHaveCount(0)
+  await expect(dialog.getByRole('button', { name: 'Approve draft', exact: true })).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: 'Reject draft', exact: true })).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: /publish|generate/i })).toHaveCount(0)
 })
 
 test('rejects invalid credentials and clears the password field', async ({ page }) => {
@@ -125,4 +127,143 @@ test('empty and disabled inbox states have explicit messages', async ({ page }) 
   disabled = false
   await dialog.getByRole('button', { name: 'Retry inbox' }).click()
   await expect(dialog).toContainText('No drafts are awaiting review')
+})
+
+for (const decision of ['approved', 'rejected'] as const) {
+  test(`records ${decision} with a required note and no publication`, async ({ page }) => {
+    let reviewed = false
+    let submitted = 0
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const final = { ...detail, status: decision, reviewed_by: 'operator', review_note: 'Checked source line 6.', reviewed_at: '2026-11-08T11:00:00Z' }
+    await page.route(/\/api\/reviewer\/drafts(?:\?|$)/, (route) => {
+      const status = new URL(route.request().url()).searchParams.get('status') || 'pending_review'
+      return route.fulfill({ json: reviewed ? (status === decision ? [final] : []) : [summary] })
+    })
+    await page.route(`**/api/reviewer/drafts/${summary.id}`, (route) => route.fulfill({ json: reviewed ? final : detail }))
+    await page.route(`**/api/reviewer/drafts/${summary.id}/review`, async (route) => {
+      submitted += 1
+      expect(route.request().method()).toBe('POST')
+      expect(route.request().headers()['authorization']).toBe(`Bearer ${token}`)
+      expect(route.request().postDataJSON()).toEqual({ decision, note: 'Checked source line 6.' })
+      await gate
+      reviewed = true
+      await route.fulfill({ json: final })
+    })
+    const dialog = await openInbox(page)
+    await unlock(page)
+    await dialog.getByRole('button', { name: /demo\/pipeline-assistant/ }).click()
+    const button = dialog.getByRole('button', { name: decision === 'approved' ? 'Approve draft' : 'Reject draft', exact: true })
+    await expect(button).toBeDisabled()
+    await dialog.getByLabel('Review note', { exact: true }).fill('Checked source line 6.')
+    await button.click()
+    try {
+      await expect(dialog.getByRole('button', { name: /Saving (approval|rejection)/ })).toBeDisabled()
+      await expect(dialog.getByRole('button', { name: 'Refresh private report' })).toBeDisabled()
+    } finally {
+      release()
+    }
+    await expect(dialog).toContainText('Review recorded. The public report is unchanged.')
+    await expect(dialog).toContainText('Reviewed by operator')
+    await expect(dialog).toContainText('Checked source line 6.')
+    await expect(dialog.getByLabel('Review note', { exact: true })).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: /approve draft|reject draft|publish/i })).toHaveCount(0)
+    await dialog.getByLabel('Draft status', { exact: true }).selectOption(decision)
+    await dialog.getByRole('button', { name: /demo\/pipeline-assistant/ }).click()
+    await expect(dialog).toContainText('Reviewed by operator')
+    await expect(dialog).toContainText('Checked source line 6.')
+    expect(submitted).toBe(1)
+  })
+}
+
+test('stale drafts can be rejected but not approved', async ({ page }) => {
+  await page.route(`**/api/reviewer/drafts/${summary.id}`, (route) => route.fulfill({ json: { ...detail, freshness: 'stale', report: null } }))
+  const dialog = await openInbox(page)
+  await unlock(page)
+  await dialog.getByRole('button', { name: /demo\/pipeline-assistant/ }).click()
+  await dialog.getByLabel('Review note', { exact: true }).fill('Evidence is no longer available.')
+  await expect(dialog.getByRole('button', { name: 'Approve draft', exact: true })).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: 'Reject draft', exact: true })).toBeEnabled()
+})
+
+test('a review conflict refreshes status and never retries the decision automatically', async ({ page }) => {
+  let requests = 0
+  let conflicted = false
+  await page.route(`**/api/reviewer/drafts/${summary.id}`, (route) => route.fulfill({ json: conflicted
+    ? { ...detail, freshness: 'stale', report: null } : detail }))
+  await page.route(`**/api/reviewer/drafts/${summary.id}/review`, (route) => {
+    requests += 1
+    conflicted = true
+    return route.fulfill({ status: 409, json: {} })
+  })
+  const dialog = await openInbox(page)
+  await unlock(page)
+  await dialog.getByRole('button', { name: /demo\/pipeline-assistant/ }).click()
+  await dialog.getByLabel('Review note', { exact: true }).fill('Checked the old source.')
+  await dialog.getByRole('button', { name: 'Approve draft', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('draft changed or was already reviewed')
+  await expect(dialog).toContainText('This draft can no longer be verified')
+  await expect(dialog.locator('blockquote')).toHaveCount(0)
+  await expect(dialog.getByRole('button', { name: 'Approve draft', exact: true })).toBeDisabled()
+  expect(requests).toBe(1)
+})
+
+test('authorization failure on a review locks the inbox', async ({ page }) => {
+  await page.route(`**/api/reviewer/drafts/${summary.id}/review`, (route) => route.fulfill({ status: 401, json: {} }))
+  const dialog = await openInbox(page)
+  await unlock(page)
+  await dialog.getByRole('button', { name: /demo\/pipeline-assistant/ }).click()
+  await dialog.getByLabel('Review note', { exact: true }).fill('Checked source line 6.')
+  await dialog.getByRole('button', { name: 'Approve draft', exact: true }).click()
+  await expect(dialog.getByLabel('Reviewer access token', { exact: true })).toHaveValue('')
+  await expect(dialog).not.toContainText('Private draft marker')
+})
+
+test('an ambiguous failure reloads the committed decision without resubmitting', async ({ page }) => {
+  let committed = false
+  let requests = 0
+  const final = { ...detail, status: 'approved', reviewed_by: 'operator', review_note: 'Checked.', reviewed_at: '2026-11-08T11:00:00Z' }
+  await page.route(`**/api/reviewer/drafts/${summary.id}`, (route) => route.fulfill({ json: committed ? final : detail }))
+  await page.route(`**/api/reviewer/drafts/${summary.id}/review`, (route) => {
+    requests += 1
+    committed = true
+    return route.fulfill({ status: 500, json: {} })
+  })
+  const dialog = await openInbox(page)
+  await unlock(page)
+  await dialog.getByRole('button', { name: /demo\/pipeline-assistant/ }).click()
+  await dialog.getByLabel('Review note', { exact: true }).fill('Checked.')
+  await dialog.getByRole('button', { name: 'Approve draft', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('review could not be confirmed')
+  await expect(dialog).toContainText('Reviewed by operator')
+  await expect(dialog.getByRole('button', { name: 'Approve draft', exact: true })).toHaveCount(0)
+  expect(requests).toBe(1)
+})
+
+test('a late review response cannot restore private content after locking', async ({ page }) => {
+  let release!: () => void
+  let started!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const received = new Promise<void>((resolve) => { started = resolve })
+  await page.route(`**/api/reviewer/drafts/${summary.id}/review`, async (route) => {
+    started()
+    await gate
+    await route.fulfill({ json: { ...detail, status: 'approved', reviewed_by: 'operator', review_note: 'Checked.' } }).catch(() => {})
+  })
+  const dialog = await openInbox(page)
+  await unlock(page)
+  await dialog.getByRole('button', { name: /demo\/pipeline-assistant/ }).click()
+  await dialog.getByLabel('Review note', { exact: true }).fill('Checked.')
+  try {
+    await dialog.getByRole('button', { name: 'Approve draft', exact: true }).click()
+    await received
+    await dialog.getByRole('button', { name: 'Lock inbox', exact: true }).click()
+  } finally {
+    release()
+  }
+  await expect(dialog.getByLabel('Reviewer access token', { exact: true })).toHaveValue('')
+  await expect(dialog).not.toContainText('Private draft marker')
+  await unlock(page)
+  await expect(dialog.getByRole('heading', { name: 'Pending drafts', exact: true })).toBeVisible()
+  await expect(dialog.getByRole('heading', { name: 'Draft details', exact: true })).toHaveCount(0)
 })

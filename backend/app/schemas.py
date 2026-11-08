@@ -112,3 +112,13 @@ class ReviewerDraftDetails(ReviewerDraftSummary):
     model: str | None = None
     generated_at: datetime | None = None
     report: InvestigationReport | None = None
+    reviewed_at: datetime | None = None
+    reviewed_by: str | None = None
+    review_note: str | None = None
+
+
+class ReviewerDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, hide_input_in_errors=True)
+
+    decision: Literal["approved", "rejected"]
+    note: str = Field(min_length=1, max_length=1000, pattern=r"^[^\x00]+$")

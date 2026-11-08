@@ -622,8 +622,8 @@ they do not provide authenticated identity or tamper-proof audit history. Draft
 documents are unchanged by review. Approval records a decision only: the public
 rule-based report is preserved, no workflow action runs, and no model is called.
 No public draft/review endpoint is exposed. Authenticated web review remains
-in progress: the protected read-only inbox below is available; review decisions
-still use local commands.
+in progress: the protected inbox below supports web decisions, while publication
+still uses a local command.
 
 ### Publishing an approved draft
 
@@ -660,9 +660,11 @@ automatically.
 ### Protected reviewer inbox
 
 Choose **Reviewer inbox** beside **Refresh** on the dashboard. This view lists
-up to twenty pending drafts and shows their report, exact citations, model and
-limitations. Stale or altered reports are hidden. Viewing a draft does not approve
-or publish it; decisions and publication remain explicit local commands.
+up to twenty drafts with a selected status and shows their report, exact citations,
+model and limitations. Stale or altered reports are hidden. Viewing a draft does
+not approve or publish it. Pending drafts have **Approve draft** and **Reject
+draft** actions, both requiring a review note. Approved/rejected filters let you
+find completed decisions and their audit details.
 
 Access uses one random operator credential, separate from the Gemini key. It is
 disabled when `REVIEWER_ACCESS_TOKEN` is unset or blank. Configure it in ignored
@@ -689,24 +691,45 @@ randomly rather than using a memorable password.
 `GET /api/reviewer/drafts` requires an `Authorization: Bearer ...` header and
 accepts bounded `limit` and `status` filters. `GET /api/reviewer/drafts/{uuid}`
 checks document integrity, citations and current curated evidence before
-returning report content. Neither route writes to the database. Unauthenticated
+returning report content. Both GET routes are read-only. Unauthenticated
 requests are rejected before acquiring a database session. Private responses,
 including errors, use `no-store` and vary on `Authorization`. Private lists omit
-the report/document; detail responses never include raw snapshots or credentials.
+the report/document; detail responses include recorded review metadata but never
+include raw snapshots or credentials.
+
+`POST /api/reviewer/drafts/{uuid}/review` accepts only a `decision` (`approved` or
+`rejected`) and a trimmed `note` of 1-1000 characters. It uses the same bearer
+authentication and assigns reviewer `operator` on the server; the browser cannot
+choose a reviewer or timestamp. The shared domain service locks and refreshes the
+draft, enforces a final decision, and rechecks integrity and current evidence for
+approval. Stale/invalid drafts can still be rejected. The transaction commits
+before success is returned; failed commits roll back. A successful review leaves
+the public report unchanged. Publication remains a separate local command.
+
+Missing drafts return 404; stale evidence, altered content and already-reviewed
+drafts return 409. Invalid request bodies return a generic 422 without echoing
+private notes. Missing/invalid credentials return 401, and disabled access or
+database availability errors return 503. The UI requires a note, disables repeated
+submissions while saving, and refreshes status after a conflict or uncertain
+failure. Decisions are not optimistically applied or automatically retried.
 
 The browser holds the credential only in the open inbox's React state. A separate
 TanStack Query client isolates private data from the public dashboard cache.
-Locking or closing cancels requests and clears the private cache; an authentication
-failure locks the inbox. Tokens never enter query keys, URLs, browser storage or
-cookies. Failed freshness refreshes hide previously displayed private reports.
+Locking or closing cancels reads and clears the private cache; each unlock creates
+a new private query client. Submitted decisions may still complete on the server
+after closing or a lost response, so reopen and check the status before retrying.
+Per-call mutation callbacks stop updating the view after it unmounts. An
+authentication failure locks the inbox. Tokens never enter query keys, URLs,
+browser storage or cookies. Failed freshness refreshes hide previously displayed
+private reports.
 These choices follow [FastAPI's bearer support](https://fastapi.tiangolo.com/reference/security/)
 and [OWASP's guidance against storing credentials in browser storage](https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html).
 
 This is single-operator access, not individual user accounts or an authenticated
-person identity. Anyone possessing the token has private read access. Production
-deployment must use HTTPS and managed secret configuration; those checks remain
-in milestone 12. Web decisions with a server-assigned operator identity are the
-next part of milestone 8.
+person identity. Anyone possessing the token can read and review private drafts;
+web review records the authenticated role `operator`, not a verified personal name.
+Production deployment must use HTTPS and managed secret configuration; those checks remain
+in milestone 12. Protected web publication is the next part of milestone 8.
 
 ## Test
 

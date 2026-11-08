@@ -18,6 +18,10 @@ MAX_DRAFT_BYTES = 1_048_576
 class DraftReviewError(Exception):
     """Safe error without private evidence or provider output."""
 
+    def __init__(self, message: str, *, status_code: int = 409):
+        super().__init__(message)
+        self.status_code = status_code
+
 
 class DraftDocument(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
@@ -52,7 +56,7 @@ def _validate_document(document: DraftDocument) -> None:
 def _require_current_evidence(session: Session, run_id: int, fingerprint: str) -> None:
     run = session.get(PipelineRun, run_id, populate_existing=True)
     if run is None:
-        raise DraftReviewError("Stored run not found.")
+        raise DraftReviewError("Stored run not found.", status_code=404)
     if evidence_fingerprint(collect_evidence(session, run)) != fingerprint:
         raise DraftReviewError("Evidence changed or lost curation. Generate and review a new draft.")
 
@@ -88,11 +92,11 @@ def store_draft(session: Session, document: DraftDocument) -> UUID:
 def review_draft(session: Session, draft_id: UUID, decision: str, reviewer: str, note: str) -> None:
     reviewer, note = reviewer.strip(), note.strip()
     if decision not in {"approved", "rejected"} or not 1 <= len(reviewer) <= 100 or not 1 <= len(note) <= 1000:
-        raise DraftReviewError("Use approved/rejected, a reviewer of 1-100 characters, and a note of 1-1000 characters.")
+        raise DraftReviewError("Use approved/rejected, a reviewer of 1-100 characters, and a note of 1-1000 characters.", status_code=422)
     # Serialize reviewers and refresh even when the Session cached an older state.
     draft = session.get(PipelineInvestigationDraft, draft_id, with_for_update=True, populate_existing=True)
     if draft is None:
-        raise DraftReviewError("Private draft not found.")
+        raise DraftReviewError("Private draft not found.", status_code=404)
     if draft.status != "pending_review":
         raise DraftReviewError("This draft has already been reviewed. Its decision cannot be overwritten.")
     if decision == "approved":
