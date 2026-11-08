@@ -146,3 +146,26 @@ class LogCurationRequest(BaseModel):
 
     expected_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
     is_curated: StrictBool
+
+
+class InvestigationTaskRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    request_id: UUID
+    run_id: int = Field(gt=0, le=9_223_372_036_854_775_807)
+
+
+class InvestigationTaskResponse(BaseModel):
+    id: UUID
+    pipeline_run_id: int
+    repository: str
+    github_run_id: int
+    run_attempt: int
+    status: Literal["queued", "running", "succeeded", "failed"]
+    model: str
+    prompt_version: str
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    draft_id: UUID | None
+    error_code: Literal["evidence_changed", "invalid_snapshot", "generation_failed", "worker_interrupted"] | None

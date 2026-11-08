@@ -5,6 +5,7 @@ import { fetchPrivateDraft, fetchPrivateDrafts, publishPrivateDraft, ReviewerAcc
 import type { PrivateDraft, ReviewDecision } from '../api/reviewer'
 import { InvestigationReportContent } from './InvestigationReportContent'
 import { LogCuration } from './LogCuration'
+import { InvestigationTasks } from './InvestigationTasks'
 import { SourceTime } from './SourceTime'
 
 export function ReviewerInbox({ onClose }: { onClose: () => void }) {
@@ -14,7 +15,7 @@ export function ReviewerInbox({ onClose }: { onClose: () => void }) {
   const [session, setSession] = useState<{ token: string; client: QueryClient } | null>(null)
   const cacheRef = useRef<QueryClient | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [view, setView] = useState<'drafts' | 'logs'>('drafts')
+  const [view, setView] = useState<'drafts' | 'logs' | 'tasks'>('drafts')
   const lock = useCallback((message?: string) => {
     setSession(null)
     setInput('')
@@ -71,12 +72,15 @@ export function ReviewerInbox({ onClose }: { onClose: () => void }) {
           </form>
         ) : (
           <QueryClientProvider client={session.client}>
-            <nav aria-label="Reviewer views" className="mb-5 flex gap-2">
+            <nav aria-label="Reviewer views" className="mb-5 flex flex-wrap gap-2">
               <button className="button" type="button" aria-pressed={view === 'drafts'} onClick={() => setView('drafts')}>AI drafts</button>
               <button className="button" type="button" aria-pressed={view === 'logs'} onClick={() => setView('logs')}>Imported logs</button>
+              <button className="button" type="button" aria-pressed={view === 'tasks'} onClick={() => setView('tasks')}>Investigation tasks</button>
             </nav>
             {view === 'drafts' ? <DraftBrowser token={session.token} onUnauthorized={lock}
-              onPublished={() => { void publicClient.invalidateQueries({ queryKey: ['run-investigation'] }) }} /> : (
+              onPublished={() => { void publicClient.invalidateQueries({ queryKey: ['run-investigation'] }) }} /> : view === 'tasks' ? (
+              <InvestigationTasks token={session.token} onUnauthorized={lock} onOpenDrafts={() => setView('drafts')} />
+            ) : (
               <LogCuration token={session.token} onUnauthorized={lock} onChanged={() => {
                 void publicClient.resetQueries({ queryKey: ['job-log'] })
                 void publicClient.resetQueries({ queryKey: ['run-investigation'] })

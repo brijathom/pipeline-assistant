@@ -35,15 +35,19 @@ percentage. A milestone is complete only when its listed outcomes are verified.
     a real failed-job example is future coverage when one is available.
 - [ ] **10. Asynchronous investigations:** Pub/Sub worker, persistent task state,
   idempotent delivery handling, bounded retries and SSE progress/reconnection.
+  - [x] Durable task state, protected queue/status APIs, one-attempt local worker,
+    duplicate handling and operator status polling.
+  - [ ] Pub/Sub dispatch/consumption, authentication and bounded delivery recovery.
+  - [ ] Authenticated SSE progress and reconnection.
 - [ ] **11. Performance metrics:** defined duration and time-window calculations,
   repository-level trends and useful dashboard presentation with appropriate tests.
 - [ ] **12. Public deployment and production checks:** Docker images, Cloud Run,
   managed PostgreSQL/migrations, IAM/secrets, logs/health checks, access/rate/cost
   controls, deployment CI, public demo and documented operational trade-offs.
 
-Current next step: asynchronous investigations with persistent task state,
-Pub/Sub delivery and SSE progress. Milestone 9 records the controlled comparison,
-including its flags and limits, in `docs/LIVE_EVALUATION.md`.
+Current next step: Pub/Sub delivery around the durable task worker, followed by
+authenticated SSE progress. The local task workflow is documented in
+`docs/ASYNC_INVESTIGATIONS.md`; milestone 10 remains open.
 
 BigQuery and additional identity providers are optional choices, not completion
 requirements. Multi-user accounts are outside this personal single-operator

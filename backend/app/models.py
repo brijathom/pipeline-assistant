@@ -2,8 +2,8 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
-    BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Identity, String, Text,
-    UniqueConstraint, Uuid, func,
+    BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Identity, Index, String, Text,
+    UniqueConstraint, Uuid, func, text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import JSONB
@@ -152,3 +152,36 @@ class PipelineInvestigationDraft(Base):
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reviewed_by: Mapped[str | None] = mapped_column(String(100))
     review_note: Mapped[str | None] = mapped_column(Text)
+
+
+class InvestigationTask(Base):
+    __tablename__ = "investigation_tasks"
+    __table_args__ = (
+        CheckConstraint("status IN ('queued', 'running', 'succeeded', 'failed')", name="ck_investigation_tasks_status"),
+        CheckConstraint("evidence_fingerprint ~ '^[0-9a-f]{64}$'", name="ck_investigation_tasks_fingerprint"),
+        CheckConstraint("jsonb_typeof(evidence_snapshot) = 'object' AND octet_length(evidence_snapshot::text) <= 65536", name="ck_investigation_tasks_snapshot"),
+        CheckConstraint(
+            "(status = 'queued' AND started_at IS NULL AND completed_at IS NULL AND error_code IS NULL) OR "
+            "(status = 'running' AND started_at IS NOT NULL AND completed_at IS NULL AND error_code IS NULL) OR "
+            "(status = 'succeeded' AND started_at IS NOT NULL AND completed_at IS NOT NULL AND error_code IS NULL) OR "
+            "(status = 'failed' AND started_at IS NOT NULL AND completed_at IS NOT NULL AND error_code IS NOT NULL)",
+            name="ck_investigation_tasks_lifecycle",
+        ),
+        CheckConstraint("status = 'succeeded' OR draft_id IS NULL", name="ck_investigation_tasks_result"),
+        CheckConstraint("error_code IN ('evidence_changed', 'invalid_snapshot', 'generation_failed', 'worker_interrupted')", name="ck_investigation_tasks_error"),
+        Index("uq_investigation_tasks_active_run", "pipeline_run_id", unique=True,
+              postgresql_where=text("status IN ('queued', 'running')")),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    pipeline_run_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("pipeline_runs.id", name="fk_investigation_tasks_run", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(20), server_default="queued")
+    model: Mapped[str] = mapped_column(String(100))
+    prompt_version: Mapped[str] = mapped_column(String(100))
+    evidence_fingerprint: Mapped[str] = mapped_column(String(64))
+    evidence_snapshot: Mapped[dict] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    draft_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("pipeline_investigation_drafts.id", name="fk_investigation_tasks_draft", ondelete="SET NULL"))
+    error_code: Mapped[str | None] = mapped_column(String(40))

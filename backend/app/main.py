@@ -7,12 +7,14 @@ from app.metrics import router as metrics_router
 from app.runs import router as runs_router
 from app.reviewer import router as reviewer_router
 from app.reviewer_logs import router as reviewer_logs_router
+from app.reviewer_tasks import router as reviewer_tasks_router
 
 app = FastAPI(title="Pipeline Assistant")
 app.include_router(runs_router)
 app.include_router(metrics_router)
 app.include_router(reviewer_router)
 app.include_router(reviewer_logs_router)
+app.include_router(reviewer_tasks_router)
 
 
 @app.exception_handler(RequestValidationError)

@@ -7,7 +7,7 @@ from alembic.config import Config
 from sqlalchemy import Engine, func, inspect, select, text
 from sqlalchemy.schema import CreateSchema
 
-from app.models import PipelineInvestigation, PipelineInvestigationDraft, PipelineJob, PipelineJobLog, PipelineJobStep, PipelineRun
+from app.models import InvestigationTask, PipelineInvestigation, PipelineInvestigationDraft, PipelineJob, PipelineJobLog, PipelineJobStep, PipelineRun
 
 
 def test_job_migration_round_trip_preserves_existing_runs(test_engine: Engine) -> None:
@@ -50,6 +50,17 @@ def test_job_migration_round_trip_preserves_existing_runs(test_engine: Engine) -
                 id=uuid4(), pipeline_run_id=run_id, content_fingerprint="b" * 64,
                 evidence_fingerprint="a" * 64, document={"report": {}},
             ))
+            connection.execute(InvestigationTask.__table__.insert().values(
+                id=uuid4(), pipeline_run_id=run_id, model="gemini-3.5-flash-lite", prompt_version="investigation-v1",
+                evidence_fingerprint="a" * 64, evidence_snapshot={},
+            ))
+            command.downgrade(config, "0006")
+            assert "investigation_tasks" not in inspect(connection).get_table_names(schema=schema)
+            assert connection.scalar(select(func.count()).select_from(PipelineRun)) == 1
+            assert connection.scalar(select(func.count()).select_from(PipelineInvestigationDraft)) == 1
+            assert connection.scalar(select(func.count()).select_from(PipelineInvestigation)) == 1
+            command.upgrade(config, "head")
+            assert connection.scalar(select(func.count()).select_from(InvestigationTask)) == 0
             command.downgrade(config, "0004")
             assert "pipeline_investigation_drafts" not in inspect(connection).get_table_names(schema=schema)
             assert connection.scalar(select(func.count()).select_from(PipelineInvestigation)) == 1

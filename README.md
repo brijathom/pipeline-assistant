@@ -791,6 +791,25 @@ This first curation workflow edits neither excerpt text nor source numbering and
 stores the current curation state and timestamp, without a separate audit history.
 No real excerpt is automatically curated by setup, testing or opening the inbox.
 
+## Background investigation tasks
+
+The protected **Reviewer inbox → Investigation tasks** view can queue a run's
+current curated failure evidence, track durable status and lead to its unreviewed
+draft. Apply migration `0007` and restart the backend before using it. Queueing
+does not call Gemini; process a chosen task separately from `backend`:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.task_worker --task-id TASK_UUID
+```
+
+The worker attempts one bounded generation and never automatically retries a
+running or completed task. Evidence is checked before and after generation;
+success stores a private draft without approving or publishing it. The worker
+uses Gemini quota under the existing account settings. This first slice uses a
+local worker command and status polling; Pub/Sub and SSE are still to follow.
+
+See [task lifecycle, recovery and local instructions](docs/ASYNC_INVESTIGATIONS.md).
+
 ## Investigation quality evaluation
 
 From `backend`, run the local rule baseline without a database or model calls:

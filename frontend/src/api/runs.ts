@@ -25,8 +25,8 @@ export async function fetchRun(runId: number, signal: AbortSignal): Promise<Pipe
   return response.json() as Promise<PipelineRun>
 }
 
-export async function fetchRuns(signal: AbortSignal, repository?: string): Promise<PipelineRun[]> {
-  const params = new URLSearchParams({ limit: String(RUN_LIMIT) })
+export async function fetchRuns(signal: AbortSignal, repository?: string, limit = RUN_LIMIT): Promise<PipelineRun[]> {
+  const params = new URLSearchParams({ limit: String(limit) })
   if (repository) params.set('repository', repository)
   const response = await fetch(`/api/runs?${params}`, {
     signal,
