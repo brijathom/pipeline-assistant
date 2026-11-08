@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 from app.config import Settings, get_settings
 from app.database import get_session
 from app.draft_reviews import DraftDocument, review_draft, store_draft
-from app.investigations import build_report, collect_evidence, evidence_fingerprint
+from app.investigations import build_report, collect_evidence, evidence_fingerprint, save_investigation
+from app.log_evidence import save_log_excerpt
+from app.log_processing import process_log
 from app.main import app
 from app.models import PipelineInvestigation, PipelineInvestigationDraft, PipelineJobLog, PipelineRun
 from app.seed import seed_demo_evidence, seed_runs
@@ -337,3 +339,130 @@ def test_published_indicator_clears_after_evidence_is_withdrawn(
     db_session.flush()
     current = reviewer_client.get(path, headers=AUTH).json()
     assert current["freshness"] == "stale" and current["is_published"] is False and current["report"] is None
+
+
+@pytest.fixture
+def imported_log(db_session: Session, private_draft):
+    # Synthetic imported evidence: no real repository or credentials are used.
+    draft = db_session.get(PipelineInvestigationDraft, private_draft)
+    job_id = draft.document["evidence_snapshot"]["jobs"][0]["job_id"]
+    save_log_excerpt(db_session, job_id, process_log(b"setup\nTOKEN=fake-secret\nFAILED <script>bad()</script>\n", start_line=2))
+    db_session.expire_all()
+    return job_id
+
+
+def test_private_log_curation_preserves_processed_lines_and_controls_public_evidence(
+    reviewer_client: TestClient, db_session: Session, imported_log,
+) -> None:
+    path = f"/api/reviewer/logs/{imported_log}"
+    before = reviewer_client.get(path, headers=AUTH)
+    assert before.status_code == 200 and before.headers["cache-control"] == "no-store"
+    body = before.json()
+    assert body["is_curated"] is False and len(body["revision"]) == 64
+    assert body["excerpt"]["lines"][0] == {"source_line": 2, "text": "TOKEN=[REDACTED]"}
+    assert "fake-secret" not in before.text and TOKEN not in before.text
+    public_path = f"/api/runs/{body['pipeline_run_id']}/jobs/{imported_log}/log"
+    assert reviewer_client.get(public_path).json() is None
+    run = db_session.get(PipelineRun, body["pipeline_run_id"])
+    assert collect_evidence(db_session, run).jobs == []
+    curated = reviewer_client.post(path + "/curation", headers=AUTH,
+        json={"is_curated": True, "expected_revision": body["revision"]})
+    assert curated.status_code == 200 and curated.json()["is_curated"] is True
+    assert curated.json()["excerpt"]["lines"] == body["excerpt"]["lines"]
+    assert curated.json()["revision"] != body["revision"]
+    assert reviewer_client.get(public_path).json()["lines"] == body["excerpt"]["lines"]
+    assert collect_evidence(db_session, run).jobs[0].job_id == imported_log
+    assert reviewer_client.get("/api/reviewer/logs", headers=AUTH).json() == []
+    listed = reviewer_client.get("/api/reviewer/logs?is_curated=true&limit=1", headers=AUTH)
+    assert listed.json()[0]["job_id"] == imported_log
+    assert all(value not in listed.text for value in ("REDACTED", "excerpt", "revision"))
+
+
+def test_reimport_conflicts_with_an_older_curation_review(
+    reviewer_client: TestClient, db_session: Session, imported_log,
+) -> None:
+    path = f"/api/reviewer/logs/{imported_log}"
+    old = reviewer_client.get(path, headers=AUTH).json()
+    save_log_excerpt(db_session, imported_log, process_log(b"new private excerpt"))
+    response = reviewer_client.post(path + "/curation", headers=AUTH,
+        json={"is_curated": True, "expected_revision": old["revision"]})
+    assert response.status_code == 409 and "new private excerpt" not in response.text
+    assert db_session.get(PipelineJobLog, imported_log, populate_existing=True).is_curated is False
+
+
+def test_withdrawal_and_recuration_do_not_resurrect_old_reports(
+    reviewer_client: TestClient, db_session: Session, imported_log,
+) -> None:
+    path = f"/api/reviewer/logs/{imported_log}"
+    initial = reviewer_client.get(path, headers=AUTH).json()
+    def decide(current, curated):
+        response = reviewer_client.post(path + "/curation", headers=AUTH,
+            json={"is_curated": curated, "expected_revision": current["revision"]})
+        assert response.status_code == 200
+        return response.json()
+    first = decide(initial, True)
+    run = db_session.get(PipelineRun, first["pipeline_run_id"])
+    bundle = collect_evidence(db_session, run)
+    save_investigation(db_session, bundle, build_report(bundle))
+    public_path = f"/api/runs/{run.id}/investigation"
+    assert reviewer_client.get(public_path).json()["status"] == "ready"
+    withdrawn = decide(first, False)
+    assert reviewer_client.get(public_path).json()["status"] == "stale"
+    final = decide(withdrawn, True)
+    assert final["revision"] != first["revision"]
+    assert reviewer_client.get(public_path).json()["status"] == "stale"
+    assert reviewer_client.get(public_path).json()["report"] is None
+    stale = reviewer_client.post(path + "/curation", headers=AUTH,
+        json={"is_curated": False, "expected_revision": first["revision"]})
+    assert stale.status_code == 409
+
+
+@pytest.mark.parametrize("method,suffix", [("GET", ""), ("GET", "/123"), ("POST", "/123/curation")])
+def test_private_log_authentication_precedes_database_access(reviewer_client: TestClient, method: str, suffix: str) -> None:
+    def forbidden_session():
+        pytest.fail("Unauthenticated log access must not acquire a database session")
+        yield
+    original = app.dependency_overrides[get_session]
+    app.dependency_overrides[get_session] = forbidden_session
+    try:
+        response = reviewer_client.request(method, "/api/reviewer/logs" + suffix)
+        assert response.status_code == 401
+        assert response.headers["cache-control"] == "no-store" and "Authorization" in response.headers["vary"]
+    finally:
+        app.dependency_overrides[get_session] = original
+
+
+@pytest.mark.parametrize("payload", [
+    {"expected_revision": "x", "is_curated": True},
+    {"expected_revision": "0" * 64, "is_curated": "true"},
+    {"expected_revision": "0" * 64, "is_curated": 1},
+    {"expected_revision": "0" * 64, "is_curated": True, "reviewed_by": "spoofed"},
+])
+def test_invalid_curation_requests_are_generic_and_do_not_write(reviewer_client: TestClient, db_session: Session, imported_log, payload) -> None:
+    response = reviewer_client.post(f"/api/reviewer/logs/{imported_log}/curation", headers=AUTH, json=payload)
+    assert response.status_code == 422 and response.json() == {"detail": "Invalid reviewer request."}
+    assert db_session.get(PipelineJobLog, imported_log).is_curated is False
+
+
+def test_log_queue_excludes_demo_and_validates_limits(reviewer_client: TestClient, db_session: Session, private_draft) -> None:
+    job_id = db_session.get(PipelineInvestigationDraft, private_draft).document["evidence_snapshot"]["jobs"][0]["job_id"]
+    assert reviewer_client.get("/api/reviewer/logs?is_curated=true", headers=AUTH).json() == []
+    assert reviewer_client.get(f"/api/reviewer/logs/{job_id}", headers=AUTH).status_code == 404
+    assert reviewer_client.get("/api/reviewer/logs/9223372036854775807", headers=AUTH).status_code == 404
+    for query in ("limit=0", "limit=51", "is_curated=bad"):
+        assert reviewer_client.get("/api/reviewer/logs?" + query, headers=AUTH).status_code == 422
+
+
+def test_failed_curation_commit_rolls_back_without_leaking_evidence(
+    reviewer_client: TestClient, db_session: Session, imported_log, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = f"/api/reviewer/logs/{imported_log}"
+    body = reviewer_client.get(path, headers=AUTH).json()
+    db_session.commit()
+    def fail_commit():
+        raise SQLAlchemyError("private-curation-error")
+    monkeypatch.setattr(db_session, "commit", fail_commit)
+    response = reviewer_client.post(path + "/curation", headers=AUTH,
+        json={"is_curated": True, "expected_revision": body["revision"]})
+    assert response.status_code == 503 and "private-curation-error" not in response.text
+    assert db_session.get(PipelineJobLog, imported_log).is_curated is False

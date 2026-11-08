@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 
 class PipelineRunResponse(BaseModel):
@@ -123,3 +123,26 @@ class ReviewerDecisionRequest(BaseModel):
 
     decision: Literal["approved", "rejected"]
     note: str = Field(min_length=1, max_length=1000, pattern=r"^[^\x00]+$")
+
+
+class ReviewerLogSummary(BaseModel):
+    job_id: int
+    pipeline_run_id: int
+    repository: str
+    github_run_id: int
+    run_attempt: int
+    job_name: str
+    is_curated: bool
+    updated_at: datetime
+
+
+class ReviewerLogDetails(ReviewerLogSummary):
+    revision: str
+    excerpt: PipelineJobLogResponse
+
+
+class LogCurationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    expected_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
+    is_curated: StrictBool

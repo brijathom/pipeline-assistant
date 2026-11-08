@@ -18,6 +18,11 @@ def find_curated_job_log(session: Session, job_id: int) -> PipelineJobLogRespons
     ))
     if record is None:
         return None
+    return serialize_log_excerpt(record)
+
+
+def serialize_log_excerpt(record: PipelineJobLog) -> PipelineJobLogResponse:
+    """Preserve processed source lines for public and authenticated viewers."""
     texts = record.text.split("\n") if record.line_count else []
     return PipelineJobLogResponse(
         lines=[LogLineResponse(source_line=record.start_line + index, text=text) for index, text in enumerate(texts)],

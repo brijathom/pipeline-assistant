@@ -435,12 +435,10 @@ A failed download or write preserves previous evidence. Raw bytes and excerpt
 contents are not printed; only processed text and metadata are persisted.
 
 Every GitHub import sets `is_curated` to false, including replacement of a
-previously curated excerpt. Redaction alone never publishes new content. Since
-the API currently has no authentication, it serves only curated evidence; the
-fictional seeder is currently the only publication path provided by the app.
-There is no real-log curation command or review UI yet. Imported GitHub excerpts
-remain hidden from the public API, and there is no visitor-triggered import
-endpoint. A curation workflow will be added with access controls.
+previously curated excerpt. Redaction alone never publishes new content. Imported
+excerpts remain hidden from the public API until an operator reviews them in
+**Reviewer inbox → Imported logs** and explicitly curates them. There is no
+visitor-triggered import endpoint.
 
 ## Investigation foundation
 
@@ -745,7 +743,47 @@ This is single-operator access, not individual user accounts or an authenticated
 person identity. Anyone possessing the token can read and review private drafts;
 web review records the authenticated role `operator`, not a verified personal name.
 Production deployment must use HTTPS and managed secret configuration; those checks remain
-in milestone 12. Imported real-log evidence curation is the remaining part of milestone 8.
+in milestone 12.
+
+### Curating imported log evidence
+
+Unlock **Reviewer inbox** with the same operator token, then choose **Imported
+logs**. The queue lists up to twenty processed GitHub excerpts, filtered by
+**Awaiting curation** or **Curated**. Fictional demo logs are excluded. Select an
+excerpt to inspect its exact source line numbers, truncation and redaction flags.
+Text is rendered as plain text, including HTML or instructions embedded in logs.
+
+Review every displayed line for sensitive information. Automatic pattern masking
+does not guarantee that all secrets or personal details were removed. Check the
+review acknowledgement and choose **Curate excerpt** only when the displayed
+content is suitable for public access and investigation evidence. This immediately
+allows the existing public log API to serve those processed lines and lets failed
+jobs use them in future investigations. Curation does not generate a report or
+send anything to Gemini. An empty queue means there are no imported excerpts with
+the selected status; use the local import command documented above first.
+
+**Withdraw curation** hides the excerpt from new public reads and excludes it
+from evidence collection. Affected stored reports become stale and are hidden.
+Even if identical text is later re-curated, the changed timestamp keeps old
+reports stale; generate and review a new report. The local browser resets public
+log/report queries after a curation attempt. Content already viewed or copied by
+other visitors cannot be recalled. Existing import commands always revoke curation
+when replacing an excerpt.
+
+Protected routes are `GET /api/reviewer/logs?is_curated=false&limit=20`,
+`GET /api/reviewer/logs/{job_id}` and `POST /api/reviewer/logs/{job_id}/curation`.
+Lists omit excerpt content. Detail returns the processed excerpt and a SHA-256
+`revision`; the POST accepts only `expected_revision` and a strict Boolean
+`is_curated`. The server locks and refreshes the log row, compares the revision,
+then commits the curation flag and timestamp together. Imports use the same row
+lock, so an excerpt replaced after viewing returns 409 and must be reviewed again.
+The browser requires a new acknowledgement after a changed revision. Failures
+refresh the status and never automatically retry a write; failed commits roll
+back. Authorization and private response headers match the draft inbox.
+
+This first curation workflow edits neither excerpt text nor source numbering and
+stores the current curation state and timestamp, without a separate audit history.
+No real excerpt is automatically curated by setup, testing or opening the inbox.
 
 ## Test
 

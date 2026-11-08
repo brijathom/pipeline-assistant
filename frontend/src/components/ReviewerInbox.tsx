@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient
 import { fetchPrivateDraft, fetchPrivateDrafts, publishPrivateDraft, ReviewerAccessError, submitPrivateReview } from '../api/reviewer'
 import type { PrivateDraft, ReviewDecision } from '../api/reviewer'
 import { InvestigationReportContent } from './InvestigationReportContent'
+import { LogCuration } from './LogCuration'
 import { SourceTime } from './SourceTime'
 
 export function ReviewerInbox({ onClose }: { onClose: () => void }) {
@@ -13,10 +14,12 @@ export function ReviewerInbox({ onClose }: { onClose: () => void }) {
   const [session, setSession] = useState<{ token: string; client: QueryClient } | null>(null)
   const cacheRef = useRef<QueryClient | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [view, setView] = useState<'drafts' | 'logs'>('drafts')
   const lock = useCallback((message?: string) => {
     setSession(null)
     setInput('')
     setError(message || null)
+    setView('drafts')
     void cacheRef.current?.cancelQueries()
     cacheRef.current?.clear()
     cacheRef.current = null
@@ -68,8 +71,18 @@ export function ReviewerInbox({ onClose }: { onClose: () => void }) {
           </form>
         ) : (
           <QueryClientProvider client={session.client}>
-            <DraftBrowser token={session.token} onUnauthorized={lock}
-              onPublished={() => { void publicClient.invalidateQueries({ queryKey: ['run-investigation'] }) }} />
+            <nav aria-label="Reviewer views" className="mb-5 flex gap-2">
+              <button className="button" type="button" aria-pressed={view === 'drafts'} onClick={() => setView('drafts')}>AI drafts</button>
+              <button className="button" type="button" aria-pressed={view === 'logs'} onClick={() => setView('logs')}>Imported logs</button>
+            </nav>
+            {view === 'drafts' ? <DraftBrowser token={session.token} onUnauthorized={lock}
+              onPublished={() => { void publicClient.invalidateQueries({ queryKey: ['run-investigation'] }) }} /> : (
+              <LogCuration token={session.token} onUnauthorized={lock} onChanged={() => {
+                void publicClient.resetQueries({ queryKey: ['job-log'] })
+                void publicClient.resetQueries({ queryKey: ['run-investigation'] })
+                void session.client.resetQueries({ queryKey: ['reviewer-draft'] })
+              }} />
+            )}
           </QueryClientProvider>
         )}
         <p className="mt-6 text-xs leading-5 text-slate-500">Approval records a review decision. Publication is a separate action.</p>

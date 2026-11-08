@@ -1,4 +1,5 @@
 import type { InvestigationReport } from './investigations'
+import type { JobLogExcerpt } from './logs'
 
 export class ReviewerAccessError extends Error {}
 
@@ -28,9 +29,27 @@ export interface ReviewDecision {
   note: string
 }
 
-async function privateRequest<T>(path: string, token: string, signal?: AbortSignal, body?: ReviewDecision, publish = false): Promise<T> {
-  const writing = !!body || publish
-  const unconfirmed = `The ${publish ? 'publication' : 'review'} could not be confirmed. Check its refreshed status before trying again.`
+export interface PrivateLog {
+  job_id: number
+  pipeline_run_id: number
+  repository: string
+  github_run_id: number
+  run_attempt: number
+  job_name: string
+  is_curated: boolean
+  updated_at: string
+}
+
+export interface PrivateLogDetails extends PrivateLog {
+  revision: string
+  excerpt: JobLogExcerpt
+}
+
+interface LogCurationDecision { expected_revision: string; is_curated: boolean }
+
+async function privateRequest<T>(path: string, token: string, signal?: AbortSignal, body?: ReviewDecision | LogCurationDecision, action: 'review' | 'publication' | 'curation' = 'review'): Promise<T> {
+  const writing = !!body || action === 'publication'
+  const unconfirmed = `The ${action} could not be confirmed. Check its refreshed status before trying again.`
   let response: Response
   try {
     response = await fetch(`/api/reviewer/${path}`, {
@@ -44,8 +63,8 @@ async function privateRequest<T>(path: string, token: string, signal?: AbortSign
   }
   if (response.status === 401 || response.status === 403) throw new ReviewerAccessError('Access token was not accepted. Enter it again.')
   if (response.status === 503) throw new Error(writing ? unconfirmed : 'Reviewer access is unavailable. Check the backend configuration.')
-  if (response.status === 409) throw new Error(publish ? 'Publication was blocked. Check approval and refreshed evidence before continuing.' : 'The draft changed or was already reviewed. Check its refreshed status before continuing.')
-  if (response.status === 422) throw new Error('Enter a review note of 1–1000 characters.')
+  if (response.status === 409) throw new Error(action === 'curation' ? 'The excerpt changed. Review the refreshed content before changing curation.' : action === 'publication' ? 'Publication was blocked. Check approval and refreshed evidence before continuing.' : 'The draft changed or was already reviewed. Check its refreshed status before continuing.')
+  if (response.status === 422) throw new Error(action === 'curation' ? 'Reload the excerpt and review it again.' : 'Enter a review note of 1–1000 characters.')
   if (!response.ok) throw new Error(writing ? unconfirmed : 'We could not load or verify the private drafts. Try again.')
   try {
     return await response.json() as T
@@ -67,5 +86,17 @@ export function submitPrivateReview(id: string, token: string, decision: ReviewD
 }
 
 export function publishPrivateDraft(id: string, token: string): Promise<PrivateDraftDetails> {
-  return privateRequest(`drafts/${encodeURIComponent(id)}/publish`, token, undefined, undefined, true)
+  return privateRequest(`drafts/${encodeURIComponent(id)}/publish`, token, undefined, undefined, 'publication')
+}
+
+export function fetchPrivateLogs(token: string, signal: AbortSignal, curated: boolean): Promise<PrivateLog[]> {
+  return privateRequest(`logs?limit=20&is_curated=${curated}`, token, signal)
+}
+
+export function fetchPrivateLog(jobId: number, token: string, signal: AbortSignal): Promise<PrivateLogDetails> {
+  return privateRequest(`logs/${jobId}`, token, signal)
+}
+
+export function setLogCuration(jobId: number, token: string, decision: LogCurationDecision): Promise<PrivateLogDetails> {
+  return privateRequest(`logs/${jobId}/curation`, token, undefined, decision, 'curation')
 }
