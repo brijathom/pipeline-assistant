@@ -51,9 +51,13 @@ percentage. A milestone is complete only when its listed outcomes are verified.
 - [ ] **12. Public deployment and production checks:** Docker images, Cloud Run,
   managed PostgreSQL/migrations, IAM/secrets, logs/health checks, access/rate/cost
   controls, deployment CI, public demo and documented operational trade-offs.
+  - Container Dockerfiles, separate demo Compose stack, Nginx SSE proxy and
+    an isolated smoke/CI check are implemented. Both images built and the local
+    runtime smoke passed through WSL, including API replacement and persistence.
+    The CI job has not run remotely; no cloud resources were created.
 
-Current next step: container images and a reproducible local container smoke
-test before configuring Cloud Run deployment. Cloud IAM verification belongs
+Current next step: review and configure Cloud Run deployment, including its
+database, secrets, worker and cost boundaries. Cloud IAM verification belongs
 with deployment; the local Pub/Sub round trip and SSE workflow are verified.
 The local task workflow is documented in
 `docs/ASYNC_INVESTIGATIONS.md`.

@@ -16,6 +16,26 @@ current draft to the dashboard, with explicit AI labelling and evidence checks.
 Progress is tracked against the fixed [completion checklist](docs/ROADMAP.md).
 Milestone counts describe delivered functionality, not an effort percentage.
 
+## Run the application with Docker
+
+A separate container demo is defined in `compose.app.yaml`. It builds the API
+and frontend, applies migrations and uses its own private database. From the
+repository root, with Docker Desktop's Linux engine running:
+
+```powershell
+docker compose -f compose.app.yaml up --build -d --wait
+docker compose -f compose.app.yaml run --rm --no-deps api python -m app.seed
+```
+
+Open <http://127.0.0.1:8080>. This stack uses fictional data and does not load your
+native backend credentials. Stop it with `docker compose -f compose.app.yaml down`
+to preserve demo data. Run `python scripts/smoke_containers.py` for an isolated
+build/test/cleanup cycle. The local build and container smoke passed through WSL.
+For this Windows installation's unresponsive Docker named-pipe connection, see
+the [verified WSL workaround](docs/CONTAINERS.md#windows-client-connection-workaround).
+
+See [container architecture, verification and deployment limits](docs/CONTAINERS.md).
+
 ## Backend setup
 
 Requires Python 3.15 (validated with 3.15.2). `backend/.python-version` records the
@@ -498,9 +518,10 @@ content on a refresh error because freshness could not be verified. **Refresh
 investigation** reloads stored data and does not generate a report. No public
 generation endpoint is exposed.
 
-The next major work remains broader model evaluation, authenticated review/approval
-workflows, Pub/Sub processing and SSE progress, timing metrics, and containerized
-public deployment on Google Cloud Run with production checks.
+The remaining delivery work is public deployment on Google Cloud Run with
+production checks. Model evaluation, protected review/approval, Pub/Sub processing,
+SSE progress and timing metrics are implemented; the [completion checklist](docs/ROADMAP.md)
+records their scope and the remaining deployment requirements.
 
 ### Optional Google ADK drafts
 

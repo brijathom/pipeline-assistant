@@ -1,0 +1,14 @@
+# Allow only build inputs. Local credentials/evidence never enter the context.
+**
+!Dockerfile
+!.dockerignore
+!pyproject.toml
+!app/
+!app/**/*.py
+!alembic.ini
+!migrations/
+!migrations/**
+**/__pycache__/
+**/*.pyc
+**/.env
+**/.env.*

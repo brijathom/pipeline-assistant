@@ -1,0 +1,85 @@
+# Separate from compose.yaml: this stack has its own private demo database.
+name: pipeline-assistant-demo
+
+x-api: &api
+  image: pipeline-assistant-api:local
+  build:
+    context: ./backend
+    target: runtime
+  environment:
+    DATABASE_URL: postgresql+psycopg://demo:local-container-demo-only@db:5432/pipeline_demo
+    # Deliberately separate from the native backend's credential; default is disabled.
+    REVIEWER_ACCESS_TOKEN: ${DEMO_REVIEWER_ACCESS_TOKEN:-}
+  read_only: true
+  tmpfs:
+    - /tmp:uid=10001,gid=10001,mode=0700
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  networks: [backend]
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: local-container-demo-only
+      POSTGRES_DB: pipeline_demo
+    volumes:
+      - demo_data:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U demo -d pipeline_demo"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    <<: *api
+    command: [python, -m, alembic, upgrade, head]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    <<: *api
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2).close()"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 15s
+
+  web:
+    image: pipeline-assistant-web:local
+    build:
+      context: ./frontend
+      target: runtime
+    ports:
+      - "127.0.0.1:${DEMO_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:uid=101,gid=101,mode=0700
+      - /etc/nginx/conf.d:uid=101,gid=101,mode=0700
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [frontend, backend]
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8080/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  demo_data:
+
+networks:
+  frontend:
+  backend:
+    internal: true
