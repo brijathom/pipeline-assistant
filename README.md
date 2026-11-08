@@ -13,6 +13,9 @@ reports are available in run details. An optional Google ADK command generates
 private AI drafts for review. Trusted local commands can approve and publish a
 current draft to the dashboard, with explicit AI labelling and evidence checks.
 
+Progress is tracked against the fixed [completion checklist](docs/ROADMAP.md).
+Milestone counts describe delivered functionality, not an effort percentage.
+
 ## Backend setup
 
 Requires Python 3.15 (validated with 3.15.2). `backend/.python-version` records the
@@ -619,7 +622,8 @@ they do not provide authenticated identity or tamper-proof audit history. Draft
 documents are unchanged by review. Approval records a decision only: the public
 rule-based report is preserved, no workflow action runs, and no model is called.
 No public draft/review endpoint is exposed. Authenticated web review remains
-future work.
+in progress: the protected read-only inbox below is available; review decisions
+still use local commands.
 
 ### Publishing an approved draft
 
@@ -652,6 +656,57 @@ cannot serve, while retaining private approved drafts and pipeline runs.
 Public HTTP endpoints remain read-only; there are no approval or publish buttons
 in the public demo. Your pending drafts are never approved or published
 automatically.
+
+### Protected reviewer inbox
+
+Choose **Reviewer inbox** beside **Refresh** on the dashboard. This view lists
+up to twenty pending drafts and shows their report, exact citations, model and
+limitations. Stale or altered reports are hidden. Viewing a draft does not approve
+or publish it; decisions and publication remain explicit local commands.
+
+Access uses one random operator credential, separate from the Gemini key. It is
+disabled when `REVIEWER_ACCESS_TOKEN` is unset or blank. Configure it in ignored
+`backend/.env`, never in frontend `VITE_*` settings or committed files. To generate
+an initial token directly into the local file without printing it, run from
+`backend` only if this setting is not already configured:
+
+```powershell
+@'
+from pathlib import Path
+import secrets
+path = Path('.env')
+with path.open('a', encoding='utf-8', newline='\n') as output:
+    output.write('\nREVIEWER_ACCESS_TOKEN=' + secrets.token_urlsafe(32) + '\n')
+'@ | .\.venv\Scripts\python.exe -
+```
+
+Restart the backend after configuring or rotating the token, since settings are
+cached per process. Open `backend/.env` locally and copy the token into the inbox
+password field; do not paste it into chat. Unsetting it and restarting disables
+private access. The token must contain 43-128 URL-safe characters; generate it
+randomly rather than using a memorable password.
+
+`GET /api/reviewer/drafts` requires an `Authorization: Bearer ...` header and
+accepts bounded `limit` and `status` filters. `GET /api/reviewer/drafts/{uuid}`
+checks document integrity, citations and current curated evidence before
+returning report content. Neither route writes to the database. Unauthenticated
+requests are rejected before acquiring a database session. Private responses,
+including errors, use `no-store` and vary on `Authorization`. Private lists omit
+the report/document; detail responses never include raw snapshots or credentials.
+
+The browser holds the credential only in the open inbox's React state. A separate
+TanStack Query client isolates private data from the public dashboard cache.
+Locking or closing cancels requests and clears the private cache; an authentication
+failure locks the inbox. Tokens never enter query keys, URLs, browser storage or
+cookies. Failed freshness refreshes hide previously displayed private reports.
+These choices follow [FastAPI's bearer support](https://fastapi.tiangolo.com/reference/security/)
+and [OWASP's guidance against storing credentials in browser storage](https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html).
+
+This is single-operator access, not individual user accounts or an authenticated
+person identity. Anyone possessing the token has private read access. Production
+deployment must use HTTPS and managed secret configuration; those checks remain
+in milestone 12. Web decisions with a server-assigned operator identity are the
+next part of milestone 8.
 
 ## Test
 

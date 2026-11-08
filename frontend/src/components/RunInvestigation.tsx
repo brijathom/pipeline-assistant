@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import { fetchInvestigation } from '../api/investigations'
 import { RunNotFoundError } from '../api/runs'
-import { SourceTime } from './SourceTime'
+import { InvestigationReportContent } from './InvestigationReportContent'
 
 export function RunInvestigation({ runId }: { runId: number }) {
   const query = useQuery({
@@ -33,22 +33,7 @@ export function RunInvestigation({ runId }: { runId: number }) {
                   : data.generation_method === 'google-adk-v1' ? 'AI-generated investigation · Approved draft'
                     : 'Stored investigation'
               }</p>
-              <p className="text-slate-700">{data.report.summary}</p>
-              <p className="text-slate-500">Generated <SourceTime value={data.generated_at} /></p>
-              {data.report.findings.map((finding, index) => (
-                <article key={index} className="rounded-lg border border-slate-200 p-4" aria-label={finding.title}>
-                  <h4 className="font-semibold text-slate-900">{finding.title}</h4>
-                  <p className="mt-2 text-slate-700">{finding.observation}</p>
-                  <p className="mt-3 text-slate-500">{finding.citation.job_name} · Source line {finding.citation.source_line}</p>
-                  <blockquote className="mt-2 whitespace-pre-wrap break-all rounded-md bg-slate-950 p-3 font-mono text-slate-100">{finding.citation.quote}</blockquote>
-                  <h5 className="mt-3 font-semibold text-slate-800">Suggested next step</h5>
-                  <p className="mt-1 text-slate-700">{finding.recommendation}</p>
-                </article>
-              ))}
-              <div>
-                <h4 className="font-semibold text-slate-800">Limitations</h4>
-                <ul className="mt-2 list-disc space-y-1 pl-4 text-slate-500">{data.report.limitations.map((limit, index) => <li key={index}>{limit}</li>)}</ul>
-              </div>
+              <InvestigationReportContent report={data.report} generatedAt={data.generated_at} />
             </div>
           )}
           <p className="mt-4 text-xs leading-5 text-slate-500">Recommendations are advisory. This report does not change or rerun workflows.</p>

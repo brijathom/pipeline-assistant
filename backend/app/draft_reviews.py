@@ -96,7 +96,7 @@ def review_draft(session: Session, draft_id: UUID, decision: str, reviewer: str,
     if draft.status != "pending_review":
         raise DraftReviewError("This draft has already been reviewed. Its decision cannot be overwritten.")
     if decision == "approved":
-        _validated_stored_document(draft)
+        validate_stored_draft(draft)
         _require_current_evidence(session, draft.pipeline_run_id, draft.evidence_fingerprint)
     # Rejection remains possible after evidence is withdrawn. Approval endorses
     # this exact payload and fingerprint, not any later version of the evidence.
@@ -107,7 +107,7 @@ def review_draft(session: Session, draft_id: UUID, decision: str, reviewer: str,
     session.flush()
 
 
-def _validated_stored_document(draft: PipelineInvestigationDraft) -> DraftDocument:
+def validate_stored_draft(draft: PipelineInvestigationDraft) -> DraftDocument:
     document = DraftDocument.model_validate(draft.document)
     _validate_document(document)
     if (document.evidence_snapshot.run_id != draft.pipeline_run_id
@@ -124,7 +124,7 @@ def publish_draft(session: Session, draft_id: UUID) -> None:
         raise DraftReviewError("Private draft not found.")
     if draft.status != "approved":
         raise DraftReviewError("Only an approved draft can be published.")
-    document = _validated_stored_document(draft)
+    document = validate_stored_draft(draft)
     # Serialize publishers for the same run. No network or model call occurs
     # while these locks are held. The public read path also rechecks freshness.
     if session.get(PipelineRun, draft.pipeline_run_id, with_for_update=True, populate_existing=True) is None:

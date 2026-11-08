@@ -1,3 +1,4 @@
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -18,7 +19,17 @@ class Settings(BaseSettings):
     database_url: SecretStr
     github_repository: RepositoryName | None = None
     gemini_api_key: SecretStr | None = None
+    reviewer_access_token: SecretStr | None = None
     ai_model: str = Field(default="gemini-3.5-flash-lite", pattern=r"^gemini-[a-z0-9.-]{1,80}$")
+
+    @field_validator("reviewer_access_token")
+    @classmethod
+    def validate_reviewer_access_token(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None or not value.get_secret_value().strip():
+            return None
+        if re.fullmatch(r"[A-Za-z0-9_-]{43,128}", value.get_secret_value()) is None:
+            raise ValueError("Reviewer access requires a URL-safe random token of 43-128 characters.")
+        return value
 
     @field_validator("database_url")
     @classmethod

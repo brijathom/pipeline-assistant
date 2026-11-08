@@ -28,6 +28,16 @@ def test_optional_ai_key_is_hidden_and_model_is_validated() -> None:
         Settings(_env_file=None, database_url="postgresql+psycopg://user:password@localhost/test", ai_model="https://untrusted.invalid")
 
 
+def test_reviewer_token_is_optional_secret_and_validated() -> None:
+    key = "fake-reviewer-" + "x" * 43
+    settings = Settings(_env_file=None, database_url="postgresql+psycopg://user:password@localhost/test", reviewer_access_token=key)
+    assert key not in repr(settings)
+    assert Settings(_env_file=None, database_url="postgresql+psycopg://user:password@localhost/test", reviewer_access_token="").reviewer_access_token is None
+    with pytest.raises(ValidationError) as error:
+        Settings(_env_file=None, database_url="postgresql+psycopg://user:password@localhost/test", reviewer_access_token="short-private-token")
+    assert "short-private-token" not in str(error.value)
+
+
 def test_database_url_rejects_other_drivers() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, database_url="postgresql://user:password@localhost/test")

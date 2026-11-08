@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -93,4 +94,21 @@ class PipelineInvestigationResponse(BaseModel):
     generation_method: Literal["rules-v1", "google-adk-v1"] | None = None
     generated_at: datetime | None = None
     evidence_fingerprint: str | None = None
+    report: InvestigationReport | None = None
+
+
+class ReviewerDraftSummary(BaseModel):
+    id: UUID
+    pipeline_run_id: int
+    repository: str
+    github_run_id: int
+    run_attempt: int
+    status: Literal["pending_review", "approved", "rejected"]
+    created_at: datetime
+
+
+class ReviewerDraftDetails(ReviewerDraftSummary):
+    freshness: Literal["current", "stale", "invalid"]
+    model: str | None = None
+    generated_at: datetime | None = None
     report: InvestigationReport | None = None

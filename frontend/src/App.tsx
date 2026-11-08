@@ -6,11 +6,13 @@ import { fetchRuns, RUN_LIMIT } from './api/runs'
 import { MetricsCards } from './components/MetricsCards'
 import { RunDetails } from './components/RunDetails'
 import { RunTable } from './components/RunTable'
+import { ReviewerInbox } from './components/ReviewerInbox'
 
 export default function App() {
   const [repositoryInput, setRepositoryInput] = useState('')
   const [repository, setRepository] = useState<string | undefined>()
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null)
+  const [reviewerOpen, setReviewerOpen] = useState(false)
   const runsQuery = useQuery({
     queryKey: ['runs', { limit: RUN_LIMIT, repository }],
     queryFn: ({ signal }) => fetchRuns(signal, repository),
@@ -68,6 +70,8 @@ export default function App() {
               <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">Pipeline runs</h1>
               <p className="mt-3 text-sm leading-6 text-slate-500">A clear view of your recent workflow executions.</p>
             </div>
+            <div className="flex flex-wrap gap-2">
+            <button className="button" type="button" onClick={() => setReviewerOpen(true)}>Reviewer inbox</button>
             <button
               className="button"
               type="button"
@@ -80,6 +84,7 @@ export default function App() {
               </svg>
               {isRefreshing ? 'Refreshing…' : 'Refresh'}
             </button>
+            </div>
           </div>
 
           <form
@@ -189,6 +194,7 @@ export default function App() {
         </main>
       </div>
       {selectedRunId !== null && <RunDetails key={selectedRunId} runId={selectedRunId} onClose={() => setSelectedRunId(null)} />}
+      {reviewerOpen && <ReviewerInbox onClose={() => setReviewerOpen(false)} />}
     </div>
   )
 }
