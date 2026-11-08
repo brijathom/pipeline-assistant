@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     database_url: SecretStr
     github_repository: RepositoryName | None = None
     gemini_api_key: SecretStr | None = None
-    ai_model: str = Field(default="gemini-3.8-flash", pattern=r"^gemini-[a-z0-9.-]{1,80}$")
+    ai_model: str = Field(default="gemini-3.5-flash-lite", pattern=r"^gemini-[a-z0-9.-]{1,80}$")
 
     @field_validator("database_url")
     @classmethod

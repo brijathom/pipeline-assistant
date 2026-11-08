@@ -21,7 +21,9 @@ def test_database_url_hides_password() -> None:
 def test_optional_ai_key_is_hidden_and_model_is_validated() -> None:
     settings = Settings(_env_file=None, database_url="postgresql+psycopg://user:password@localhost/test", gemini_api_key="fake-private-key")
     assert "fake-private-key" not in repr(settings)
-    assert settings.ai_model == "gemini-3.8-flash"
+    assert settings.ai_model == "gemini-3.5-flash-lite"
+    override = Settings(_env_file=None, database_url="postgresql+psycopg://user:password@localhost/test", ai_model="gemini-3.8-flash")
+    assert override.ai_model == "gemini-3.8-flash"
     with pytest.raises(ValidationError):
         Settings(_env_file=None, database_url="postgresql+psycopg://user:password@localhost/test", ai_model="https://untrusted.invalid")
 

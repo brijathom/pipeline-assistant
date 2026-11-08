@@ -125,7 +125,7 @@ async def _run_once(model: "BaseLlm", payload: str) -> str:
 
 async def generate_ai_report(
     bundle: EvidenceBundle, *, api_key: SecretStr | None = None,
-    model_name: str = "gemini-3.8-flash", model: "BaseLlm | None" = None,
+    model_name: str = "gemini-3.5-flash-lite", model: "BaseLlm | None" = None,
 ) -> InvestigationReport:
     """One bounded invocation, with a fresh in-memory session and no tools.
 

@@ -510,11 +510,11 @@ affects only that terminal. On Linux/macOS, use
 
 Add a Gemini API key to the ignored `backend/.env` locally; never paste it into
 code, Git, test fixtures, or chat. `GEMINI_API_KEY` is optional for the normal
-application. `AI_MODEL` defaults to `gemini-3.8-flash` and accepts Gemini model
+application. `AI_MODEL` defaults to `gemini-3.5-flash-lite` and accepts Gemini model
 names, not URLs. This first provider uses the Gemini Developer API with explicit
 key authentication; Vertex AI/Google Cloud identity integration is future work.
 See Google's [API-key setup](https://ai.google.dev/gemini-api/docs/api-key) and
-[model documentation](https://aistudio.google.com/docs/models/gemini-3.8-flash).
+[model documentation](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite).
 
 With a key configured, this explicit command sends curated evidence to Gemini
 and can incur model charges. Use the **local database ID** of the failed demo
@@ -534,8 +534,8 @@ model call. There are no repair calls or automatic retries. These bounds limit
 work but are not a currency-based spending cap.
 
 Reasoning effort is explicitly `low` for this bounded excerpt analysis rather
-than relying on the model default. Gemini 3.8 Flash supports this setting; see
-Google's [thinking controls](https://ai.google.dev/gemini-api/docs/latest-model).
+than relying on the model default. Gemini 3.5 Flash-Lite supports this setting;
+see Google's [model guidance](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-5-flash-lite).
 This is a latency/quality trade-off, not a guarantee against provider timeouts.
 Alternative `AI_MODEL` values must also support the `low` thinking level.
 
@@ -564,13 +564,21 @@ the API and UI never read these draft files.
 Tests exercise the real ADK runner with a fake model, plus the real Gemini client
 with mocked HTTP. They cover output validation, invented citations, provider
 failure, timeout cancellation, prompt/response caps, and preservation of public
-reports. No credentials or paid calls are needed for these tests. A live provider
-smoke test and evaluation of model quality remain outstanding.
+reports. No credentials or paid calls are needed for these tests.
 
-Live verification on 8 November 2026 reached the configured provider but returned
-HTTP 504 with both default and explicit `low` reasoning effort. No AI draft was
-saved. The mocked tests do not establish live availability or report quality;
-further evaluation needs a successful provider response.
+Live verification on 8 November 2026 isolated repeated Gemini 3.8 Flash API
+timeouts: a tiny SDK request returned HTTP 504 and a direct HTTP request also
+timed out, while AI Studio chat worked. Gemini 3.5 Flash-Lite succeeded with the
+same key: a plain SDK prompt took about one second, and the full report schema
+with fictional evidence took about two seconds. The complete ADK draft command
+then succeeded, with a valid citation to source line 6 of demo run 1002 and no
+change to the public report. This is why 3.5 Flash-Lite is the default; the cause
+of 3.8 Flash's API timeouts remains unresolved.
+
+The first draft identified the HTTP 200-versus-503 assertion, recommended manual
+inspection, and acknowledged the truncated excerpt. This one fictional case is
+a smoke test, not a broad evaluation of model quality. Private drafts remain
+`pending_review`; broader quality evaluation and human approval are future work.
 
 ## Test
 

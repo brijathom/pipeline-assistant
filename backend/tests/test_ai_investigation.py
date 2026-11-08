@@ -140,12 +140,13 @@ def test_log_instructions_are_data_and_do_not_enable_tools(evidence: EvidenceBun
     assert "untrusted data" in str(model.requests[0].config.system_instruction)
 
 
-@pytest.mark.parametrize("status, finish_reason", [
-    (200, "STOP"), (200, "CONTINUATION"),
-    *[(code, "STOP") for code in (400, 401, 403, 404, 429, 500, 502, 503, 504)],
+@pytest.mark.parametrize("status, finish_reason, model_override", [
+    (200, "STOP", None), (200, "STOP", "gemini-3.8-flash"), (200, "CONTINUATION", None),
+    *[(code, "STOP", None) for code in (400, 401, 403, 404, 429, 500, 502, 503, 504)],
 ])
 def test_real_gemini_client_uses_fixed_endpoint_and_one_request_without_network(
     monkeypatch: pytest.MonkeyPatch, evidence: EvidenceBundle, status: int, finish_reason: str,
+    model_override: str | None,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     import google.genai
@@ -157,7 +158,8 @@ def test_real_gemini_client_uses_fixed_endpoint_and_one_request_without_network(
     def handle(request: httpx.Request) -> httpx.Response:
         requests.append(request)
         assert request.method == "POST" and request.url.host == "generativelanguage.googleapis.com"
-        assert request.url.path == "/v1beta/models/gemini-3.8-flash:generateContent"
+        expected_model = model_override or "gemini-3.5-flash-lite"
+        assert request.url.path == f"/v1beta/models/{expected_model}:generateContent"
         assert request.headers["x-goog-api-key"] == "fake-api-key"
         body = json.loads(request.content)
         assert not body.get("tools")
@@ -183,11 +185,12 @@ def test_real_gemini_client_uses_fixed_endpoint_and_one_request_without_network(
         return real_client(**kwargs)
 
     monkeypatch.setattr(google.genai, "Client", client_factory)
+    options = {"model_name": model_override} if model_override else {}
     if status == 200 and finish_reason == "STOP":
-        assert asyncio.run(generate_ai_report(evidence, api_key=SecretStr("fake-api-key"))) == expected
+        assert asyncio.run(generate_ai_report(evidence, api_key=SecretStr("fake-api-key"), **options)) == expected
     else:
         with pytest.raises(AIGenerationError) as error:
-            asyncio.run(generate_ai_report(evidence, api_key=SecretStr("fake-api-key")))
+            asyncio.run(generate_ai_report(evidence, api_key=SecretStr("fake-api-key"), **options))
         assert "fake-api-key" not in str(error.value) and "provider-response-body" not in str(error.value)
         if status != 200:
             assert f"HTTP {status}" in str(error.value)

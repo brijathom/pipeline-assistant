@@ -22,7 +22,7 @@ def draft_setup(monkeypatch: pytest.MonkeyPatch, db_session: Session, tmp_path: 
     seed_demo_evidence(db_session)
     run_id = db_session.scalar(select(PipelineRun.id).where(PipelineRun.github_run_id == 1002))
     sessions = []
-    monkeypatch.setattr(draft_investigation, "get_settings", lambda: SimpleNamespace(gemini_api_key=SecretStr("fake-api-key"), ai_model="gemini-3.8-flash"))
+    monkeypatch.setattr(draft_investigation, "get_settings", lambda: SimpleNamespace(gemini_api_key=SecretStr("fake-api-key"), ai_model="gemini-3.5-flash-lite"))
     monkeypatch.setattr(draft_investigation, "get_engine", lambda: db_session.get_bind())
     monkeypatch.setattr(draft_investigation, "DRAFT_DIRECTORY", tmp_path / ".drafts")
     monkeypatch.setattr(sys, "argv", ["draft_investigation", "--run-id", str(run_id)])
@@ -52,7 +52,7 @@ def test_private_draft_does_not_replace_public_report_or_hold_database_connectio
     document = json.loads(path.read_text(encoding="utf-8"))
     assert document["status"] == "pending_review"
     assert document["generation_method"] == "google-adk-v1"
-    assert document["model"] == "gemini-3.8-flash" and document["prompt_version"]
+    assert document["model"] == "gemini-3.5-flash-lite" and document["prompt_version"]
     assert document["thinking_level"] == "low"
     assert document["report"]["findings"][0]["citation"]["source_line"] == 6
     assert "fake-api-key" not in path.read_text(encoding="utf-8")
