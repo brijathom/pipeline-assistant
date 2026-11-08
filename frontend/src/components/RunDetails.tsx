@@ -4,6 +4,7 @@ import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchRun, RunNotFoundError } from '../api/runs'
 import { readable } from '../format'
 import { RunJobs } from './RunJobs'
+import { RunInvestigation } from './RunInvestigation'
 import { SourceTime } from './SourceTime'
 
 export function RunDetails({ runId, onClose }: { runId: number; onClose: () => void }) {
@@ -89,6 +90,7 @@ export function RunDetails({ runId, onClose }: { runId: number; onClose: () => v
                   {query.isFetching || jobsFetching ? 'Refreshing details…' : 'Refresh details'}
                 </button>
                 <RunJobs runId={runId} />
+                <RunInvestigation runId={runId} />
               </>
             )}
           </>

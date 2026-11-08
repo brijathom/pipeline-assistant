@@ -7,7 +7,7 @@ from alembic.config import Config
 from sqlalchemy import Engine, func, inspect, select, text
 from sqlalchemy.schema import CreateSchema
 
-from app.models import PipelineJob, PipelineJobLog, PipelineJobStep, PipelineRun
+from app.models import PipelineInvestigation, PipelineJob, PipelineJobLog, PipelineJobStep, PipelineRun
 
 
 def test_job_migration_round_trip_preserves_existing_runs(test_engine: Engine) -> None:
@@ -42,6 +42,15 @@ def test_job_migration_round_trip_preserves_existing_runs(test_engine: Engine) -
                 pipeline_job_id=job_id, text="processed evidence", start_line=1, line_count=1,
                 total_source_lines=1, truncated=False, redactions_applied=False, source_kind="github",
             ))
+            connection.execute(PipelineInvestigation.__table__.insert().values(
+                pipeline_run_id=run_id, generation_method="rules-v1", evidence_fingerprint="a" * 64,
+                evidence_snapshot={}, report={},
+            ))
+            command.downgrade(config, "0003")
+            assert "pipeline_investigations" not in inspect(connection).get_table_names(schema=schema)
+            assert connection.scalar(select(func.count()).select_from(PipelineJobLog)) == 1
+            command.upgrade(config, "head")
+            assert connection.scalar(select(func.count()).select_from(PipelineInvestigation)) == 0
             command.downgrade(config, "0002")
             assert "pipeline_job_logs" not in inspect(connection).get_table_names(schema=schema)
             assert connection.scalar(select(func.count()).select_from(PipelineJob)) == 1

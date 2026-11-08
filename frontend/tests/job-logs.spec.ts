@@ -18,6 +18,9 @@ const excerpt: JobLogExcerpt = {
 
 test.describe('stored log excerpts', () => {
   test.beforeEach(async ({ page }) => {
+    await page.route('**/api/runs/*/investigation', (route) => route.fulfill({ json: {
+      status: 'not_generated', generation_method: null, generated_at: null, evidence_fingerprint: null, report: null,
+    } }))
     await page.route('**/api/runs?*', (route) => route.fulfill({ json: [run] }))
     await page.route(/\/api\/metrics(?:\?|$)/, (route) => route.fulfill({ json: {
       repository: null, total_runs: 1, successful_runs: 0, failed_runs: 1, in_progress_runs: 0,

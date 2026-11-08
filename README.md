@@ -8,8 +8,9 @@ The backend exposes a health endpoint and interactive API documentation, with
 SQLAlchemy models and an Alembic migration for pipeline runs in PostgreSQL.
 Fictional demo data, read-only ingestion of public GitHub Actions runs, runs and
 metrics APIs, job/step evidence, bounded log imports, and a React dashboard are
-included. Curated fictional log excerpts are available in run details. AI
-investigations are planned.
+included. Curated fictional log excerpts and stored rule-based investigation
+reports are available in run details. AI-generated investigations are planned;
+the current report generator does not call an AI model.
 
 ## Backend setup
 
@@ -436,6 +437,60 @@ fictional seeder is currently the only publication path provided by the app.
 There is no real-log curation command or review UI yet. Imported GitHub excerpts
 remain hidden from the public API, and there is no visitor-triggered import
 endpoint. A curation workflow will be added with access controls.
+
+## Investigation foundation
+
+The failed demo run (`demo/pipeline-assistant`, GitHub run `1002`) includes a
+stored investigation. Open its details and scroll to **Investigation** to see
+observations, suggested next steps, exact log quotes, source line numbers, and
+explicit limitations. Reports are clearly labelled **Rule-based evidence summary**;
+there is no Google ADK integration or model call yet. Recommendations are advisory
+and never modify or rerun a workflow.
+
+From `backend`, generate or refresh a report for one stored run, replacing `123`
+with its local database ID:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.investigate_run --run-id 123
+```
+
+Generation uses stored evidence only, with no network calls. A failed job is one
+with a `failure`/`timed_out` conclusion or a stored step with either conclusion.
+The snapshot includes at most ten such jobs with curated excerpts, ordered by
+GitHub job ID and local ID. Other jobs contribute to a count of omitted evidence;
+uncurated excerpts never enter the snapshot. Names are bounded and each excerpt
+retains the existing 100-line/16 KiB limits. Diagnostic quotes are limited to
+4,096 characters. Missing or insufficient evidence yields explicit limitations
+instead of an invented cause. If no failures are recorded, the report says so.
+
+Pydantic validates the versioned report structure. Before persistence, every
+citation must match a job, source line, and exact quote in the evidence snapshot.
+The deterministic generator recognizes HTTP status assertions, timeout messages,
+and generic failure diagnostics. It reports observations, not a proven root
+cause; citation validation alone does not establish that a future model's reasoning
+is correct. The structured contract can later be used by an AI generator.
+
+Migration `0004` creates `pipeline_investigations`: one current report per run,
+with cascading cleanup when its run is deleted. PostgreSQL JSONB stores the
+variable report and evidence documents, with object-type and 512 KiB checks;
+the run foreign key and generation metadata remain relational columns. A SHA-256
+fingerprint binds the report to the selected evidence and source identity.
+Generation runs outside the read transaction, then a short write transaction
+locks the parent, rechecks the fingerprint, and saves atomically. Unchanged
+evidence is idempotent; generation or write failures preserve the previous report.
+
+`GET /api/runs/{id}/investigation` returns `ready`, `not_generated`, or `stale`.
+A missing run returns HTTP 404. Before serving a stored report, the API compares
+its fingerprint with current curated evidence. Changed or withdrawn evidence
+returns `stale` without the previous quotes, report, or snapshot. Internal evidence
+snapshots are never returned. Responses use `no-store`; the UI hides report
+content on a refresh error because freshness could not be verified. **Refresh
+investigation** reloads stored data and does not generate a report. No public
+generation endpoint is exposed.
+
+The next major work remains Google ADK generation and evaluation, authenticated
+review/approval workflows, Pub/Sub processing and SSE progress, timing metrics,
+and containerized public deployment on Google Cloud Run with production checks.
 
 ## Test
 

@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.database import get_engine
+from app.investigations import build_report, collect_evidence, save_investigation
 from app.log_evidence import save_log_excerpt
 from app.log_processing import process_log
 from app.models import PipelineJob, PipelineJobLog, PipelineJobStep, PipelineRun
@@ -68,6 +69,8 @@ def seed_demo_evidence(session: Session) -> None:
             b"Process completed with exit code 1\n"
         )
         save_log_excerpt(session, job_id, process_log(raw, start_line=3), source_kind="demo", is_curated=True)
+    bundle = collect_evidence(session, run)
+    save_investigation(session, bundle, build_report(bundle))
 
 
 def main() -> None:
@@ -76,7 +79,7 @@ def main() -> None:
         seed_demo_evidence(session)
         session.commit()
     print(f"Inserted {inserted} fictional demo runs.")
-    print("Fictional failed-job evidence and a curated log excerpt are available.")
+    print("Fictional failed-job evidence, a curated excerpt, and a rule-based investigation are available.")
 
 
 if __name__ == "__main__":

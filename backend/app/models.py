@@ -5,6 +5,7 @@ from sqlalchemy import (
     UniqueConstraint, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.dialects.postgresql import JSONB
 
 from app.database import Base
 
@@ -93,3 +94,28 @@ class PipelineJobLog(Base):
     source_kind: Mapped[str] = mapped_column(String(20))
     is_curated: Mapped[bool] = mapped_column(Boolean, server_default="false")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PipelineInvestigation(Base):
+    __tablename__ = "pipeline_investigations"
+    __table_args__ = (
+        CheckConstraint("length(evidence_fingerprint) = 64", name="ck_pipeline_investigations_fingerprint"),
+        CheckConstraint(
+            "jsonb_typeof(evidence_snapshot) = 'object' AND octet_length(evidence_snapshot::text) <= 524288",
+            name="ck_pipeline_investigations_snapshot",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(report) = 'object' AND octet_length(report::text) <= 524288",
+            name="ck_pipeline_investigations_report",
+        ),
+    )
+
+    pipeline_run_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("pipeline_runs.id", name="fk_pipeline_investigations_run", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    generation_method: Mapped[str] = mapped_column(String(50))
+    evidence_fingerprint: Mapped[str] = mapped_column(String(64))
+    evidence_snapshot: Mapped[dict] = mapped_column(JSONB)
+    report: Mapped[dict] = mapped_column(JSONB)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

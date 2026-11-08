@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PipelineRunResponse(BaseModel):
@@ -62,3 +62,34 @@ class PipelineJobLogResponse(BaseModel):
     redactions_applied: bool
     source_kind: Literal["github", "demo"]
     updated_at: datetime
+
+
+class InvestigationCitation(BaseModel):
+    job_id: int = Field(gt=0)
+    job_name: str = Field(min_length=1, max_length=240)
+    source_line: int = Field(gt=0)
+    quote: str = Field(min_length=1, max_length=4096)
+
+
+class InvestigationFinding(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    observation: str = Field(min_length=1, max_length=1000)
+    recommendation: str = Field(min_length=1, max_length=1000)
+    citation: InvestigationCitation
+
+
+class InvestigationReport(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    schema_version: Literal[1] = 1
+    summary: str = Field(min_length=1, max_length=1000)
+    findings: list[InvestigationFinding] = Field(max_length=10)
+    limitations: list[str] = Field(max_length=15)
+
+
+class PipelineInvestigationResponse(BaseModel):
+    status: Literal["ready", "stale", "not_generated"]
+    generation_method: Literal["rules-v1"] | None = None
+    generated_at: datetime | None = None
+    evidence_fingerprint: str | None = None
+    report: InvestigationReport | None = None
