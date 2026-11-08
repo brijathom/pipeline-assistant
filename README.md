@@ -10,7 +10,8 @@ Fictional demo data, read-only ingestion of public GitHub Actions runs, runs and
 metrics APIs, job/step evidence, bounded log imports, and a React dashboard are
 included. Curated fictional log excerpts and stored rule-based investigation
 reports are available in run details. An optional Google ADK command generates
-private AI drafts for review; the public report generator remains rule-based.
+private AI drafts for review. Trusted local commands can approve and publish a
+current draft to the dashboard, with explicit AI labelling and evidence checks.
 
 ## Backend setup
 
@@ -443,10 +444,11 @@ endpoint. A curation workflow will be added with access controls.
 The failed demo run (`demo/pipeline-assistant`, GitHub run `1002`) includes a
 stored investigation. Open its details and scroll to **Investigation** to see
 observations, suggested next steps, exact log quotes, source line numbers, and
-explicit limitations. Public reports are clearly labelled **Rule-based evidence
-summary** and do not call an AI model. The separate optional ADK command below
-creates private drafts. Recommendations are advisory and never modify or rerun
-a workflow.
+explicit limitations. The default report is labelled **Rule-based evidence
+summary** and needs no AI model. An explicitly published approved draft is
+labelled **AI-generated investigation · Approved draft**. The optional ADK
+command below creates private drafts first. Recommendations are advisory and
+never modify or rerun a workflow.
 
 From `backend`, generate or refresh a report for one stored run, replacing `123`
 with its local database ID:
@@ -468,8 +470,8 @@ Pydantic validates the versioned report structure. Before persistence, every
 citation must match a job, source line, and exact quote in the evidence snapshot.
 The deterministic generator recognizes HTTP status assertions, timeout messages,
 and generic failure diagnostics. It reports observations, not a proven root
-cause; citation validation alone does not establish that a future model's reasoning
-is correct. The structured contract can later be used by an AI generator.
+cause; citation validation alone does not establish that an AI model's reasoning
+is correct. Both generators use the same structured report contract.
 
 Migration `0004` creates `pipeline_investigations`: one current report per run,
 with cascading cleanup when its run is deleted. PostgreSQL JSONB stores the
@@ -616,8 +618,40 @@ These are trusted local developer commands, with a self-reported reviewer name;
 they do not provide authenticated identity or tamper-proof audit history. Draft
 documents are unchanged by review. Approval records a decision only: the public
 rule-based report is preserved, no workflow action runs, and no model is called.
-No public draft/review endpoint is exposed. Authentication and publication are
-separate future features.
+No public draft/review endpoint is exposed. Authenticated web review remains
+future work.
+
+### Publishing an approved draft
+
+After reviewing and approving a draft, publication is a separate explicit local
+action. Apply migration `0006` with `alembic upgrade head`, then run from `backend`:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.review_draft publish --draft-id DRAFT_UUID
+```
+
+The command requires `approved` status, verifies the original payload and exact
+citations again, and compares the evidence fingerprint with current curated
+evidence. A short transaction locks the draft and parent run, then replaces the
+run's public report with the exact approved report and its original generation
+time. Repeating publication of that draft yields the same public content and
+timestamp. This command makes no model or GitHub calls.
+
+Migration `0006` adds a private `source_draft_id` link to the public report row.
+Before returning an AI report, the read API verifies that its source still exists,
+is approved, belongs to this run, passes its content fingerprint, and matches the
+published snapshot/report. Changed evidence, missing approval, or altered content
+returns `stale` with all report content hidden. The response never includes the
+draft document, draft UUID, reviewer identity or review note. The dashboard renders
+report text and quotes as plain text and displays the AI label.
+
+The fictional seeder preserves published AI reports. Explicitly running
+`app.investigate_run` restores a rule-based report and clears its source-draft
+link. Rolling back migration `0006` removes public AI copies that older code
+cannot serve, while retaining private approved drafts and pipeline runs.
+Public HTTP endpoints remain read-only; there are no approval or publish buttons
+in the public demo. Your pending drafts are never approved or published
+automatically.
 
 ## Test
 

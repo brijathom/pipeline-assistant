@@ -1,6 +1,4 @@
-"""Private draft persistence and local review; never publishes or calls AI."""
-import hashlib
-import json
+"""Private drafts, local review and explicit publication; never calls AI."""
 from pathlib import Path
 from typing import Literal
 from uuid import UUID, uuid4
@@ -10,8 +8,8 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.investigations import EvidenceBundle, collect_evidence, evidence_fingerprint, validate_citations
-from app.models import PipelineInvestigationDraft, PipelineRun
+from app.investigations import EvidenceBundle, collect_evidence, document_fingerprint, evidence_fingerprint, validate_citations
+from app.models import PipelineInvestigation, PipelineInvestigationDraft, PipelineRun
 from app.schemas import InvestigationReport
 
 MAX_DRAFT_BYTES = 1_048_576
@@ -51,11 +49,6 @@ def _validate_document(document: DraftDocument) -> None:
     validate_citations(document.report, document.evidence_snapshot)
 
 
-def _content_fingerprint(payload: dict) -> str:
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
 def _require_current_evidence(session: Session, run_id: int, fingerprint: str) -> None:
     run = session.get(PipelineRun, run_id, populate_existing=True)
     if run is None:
@@ -70,7 +63,7 @@ def store_draft(session: Session, document: DraftDocument) -> UUID:
     # Keep the generated payload unchanged; the authoritative review state lives
     # in separate columns, not in the original file's pending_review field.
     payload = document.model_dump(mode="json", exclude={"status"})
-    fingerprint = _content_fingerprint(payload)
+    fingerprint = document_fingerprint(payload)
     existing = session.scalar(select(PipelineInvestigationDraft.id).where(
         PipelineInvestigationDraft.content_fingerprint == fingerprint,
     ))
@@ -103,12 +96,7 @@ def review_draft(session: Session, draft_id: UUID, decision: str, reviewer: str,
     if draft.status != "pending_review":
         raise DraftReviewError("This draft has already been reviewed. Its decision cannot be overwritten.")
     if decision == "approved":
-        document = DraftDocument.model_validate(draft.document)
-        _validate_document(document)
-        if (document.evidence_snapshot.run_id != draft.pipeline_run_id
-                or document.evidence_fingerprint != draft.evidence_fingerprint
-                or _content_fingerprint(draft.document) != draft.content_fingerprint):
-            raise DraftReviewError("Stored draft integrity check failed.")
+        _validated_stored_document(draft)
         _require_current_evidence(session, draft.pipeline_run_id, draft.evidence_fingerprint)
     # Rejection remains possible after evidence is withdrawn. Approval endorses
     # this exact payload and fingerprint, not any later version of the evidence.
@@ -117,3 +105,41 @@ def review_draft(session: Session, draft_id: UUID, decision: str, reviewer: str,
     draft.review_note = note
     draft.reviewed_at = func.now()
     session.flush()
+
+
+def _validated_stored_document(draft: PipelineInvestigationDraft) -> DraftDocument:
+    document = DraftDocument.model_validate(draft.document)
+    _validate_document(document)
+    if (document.evidence_snapshot.run_id != draft.pipeline_run_id
+            or document.evidence_fingerprint != draft.evidence_fingerprint
+            or document_fingerprint(draft.document) != draft.content_fingerprint):
+        raise DraftReviewError("Stored draft integrity check failed.")
+    return document
+
+
+def publish_draft(session: Session, draft_id: UUID) -> None:
+    """Publish only an approved, unchanged document with current curated evidence."""
+    draft = session.get(PipelineInvestigationDraft, draft_id, with_for_update=True, populate_existing=True)
+    if draft is None:
+        raise DraftReviewError("Private draft not found.")
+    if draft.status != "approved":
+        raise DraftReviewError("Only an approved draft can be published.")
+    document = _validated_stored_document(draft)
+    # Serialize publishers for the same run. No network or model call occurs
+    # while these locks are held. The public read path also rechecks freshness.
+    if session.get(PipelineRun, draft.pipeline_run_id, with_for_update=True, populate_existing=True) is None:
+        raise DraftReviewError("Stored run not found.")
+    _require_current_evidence(session, draft.pipeline_run_id, draft.evidence_fingerprint)
+    statement = insert(PipelineInvestigation).values(
+        pipeline_run_id=draft.pipeline_run_id, generation_method=document.generation_method,
+        evidence_fingerprint=document.evidence_fingerprint,
+        evidence_snapshot=document.evidence_snapshot.model_dump(mode="json"),
+        report=document.report.model_dump(mode="json"), generated_at=document.generated_at,
+        source_draft_id=draft.id,
+    )
+    session.execute(statement.on_conflict_do_update(
+        index_elements=[PipelineInvestigation.pipeline_run_id],
+        set_={key: getattr(statement.excluded, key) for key in (
+            "generation_method", "evidence_fingerprint", "evidence_snapshot", "report", "generated_at", "source_draft_id",
+        )},
+    ))

@@ -1,4 +1,4 @@
-"""Curated evidence snapshots and deterministic reports; no model or network calls."""
+"""Curated evidence, rule-based generation and stored report reads; no model calls."""
 import hashlib
 import json
 import re
@@ -8,7 +8,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.models import PipelineInvestigation, PipelineJob, PipelineJobLog, PipelineJobStep, PipelineRun
+from app.models import PipelineInvestigation, PipelineInvestigationDraft, PipelineJob, PipelineJobLog, PipelineJobStep, PipelineRun
 from app.schemas import (
     InvestigationCitation, InvestigationFinding, InvestigationReport, LogLineResponse, PipelineInvestigationResponse,
 )
@@ -77,7 +77,11 @@ def collect_evidence(session: Session, run: PipelineRun) -> EvidenceBundle:
 
 
 def evidence_fingerprint(bundle: EvidenceBundle) -> str:
-    encoded = json.dumps(bundle.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return document_fingerprint(bundle.model_dump(mode="json"))
+
+
+def document_fingerprint(document: dict) -> str:
+    encoded = json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
@@ -147,11 +151,12 @@ def save_investigation(session: Session, bundle: EvidenceBundle, report: Investi
         pipeline_run_id=bundle.run_id, generation_method=GENERATION_METHOD,
         evidence_fingerprint=evidence_fingerprint(bundle), evidence_snapshot=bundle.model_dump(mode="json"),
         report=report.model_dump(mode="json"),
+        source_draft_id=None,
     )
     session.execute(statement.on_conflict_do_update(
         index_elements=[PipelineInvestigation.pipeline_run_id],
         set_={**{key: getattr(statement.excluded, key) for key in (
-            "generation_method", "evidence_fingerprint", "evidence_snapshot", "report",
+            "generation_method", "evidence_fingerprint", "evidence_snapshot", "report", "source_draft_id",
         )}, "generated_at": func.now()},
         where=or_(
             PipelineInvestigation.evidence_fingerprint != statement.excluded.evidence_fingerprint,
@@ -161,12 +166,21 @@ def save_investigation(session: Session, bundle: EvidenceBundle, report: Investi
 
 
 def find_investigation(session: Session, run: PipelineRun) -> PipelineInvestigationResponse:
-    record = session.get(PipelineInvestigation, run.id)
+    record = session.get(PipelineInvestigation, run.id, populate_existing=True)
     if record is None:
         return PipelineInvestigationResponse(status="not_generated")
     if record.evidence_fingerprint != evidence_fingerprint(collect_evidence(session, run)):
         # Never send old quotes after source evidence changes or loses curation.
         return PipelineInvestigationResponse(status="stale")
+    if record.generation_method == "google-adk-v1":
+        draft = session.get(PipelineInvestigationDraft, record.source_draft_id, populate_existing=True) if record.source_draft_id else None
+        if (draft is None or draft.status != "approved" or draft.pipeline_run_id != run.id
+                or draft.evidence_fingerprint != record.evidence_fingerprint
+                or document_fingerprint(draft.document) != draft.content_fingerprint
+                or draft.document.get("evidence_fingerprint") != record.evidence_fingerprint
+                or draft.document.get("evidence_snapshot") != record.evidence_snapshot
+                or draft.document.get("report") != record.report):
+            return PipelineInvestigationResponse(status="stale")
     return PipelineInvestigationResponse(
         status="ready", generation_method=record.generation_method, generated_at=record.generated_at,
         evidence_fingerprint=record.evidence_fingerprint, report=InvestigationReport.model_validate(record.report),

@@ -90,7 +90,7 @@ class InvestigationReport(BaseModel):
 
 class PipelineInvestigationResponse(BaseModel):
     status: Literal["ready", "stale", "not_generated"]
-    generation_method: Literal["rules-v1"] | None = None
+    generation_method: Literal["rules-v1", "google-adk-v1"] | None = None
     generated_at: datetime | None = None
     evidence_fingerprint: str | None = None
     report: InvestigationReport | None = None

@@ -14,7 +14,7 @@ export interface InvestigationReport {
 
 export interface RunInvestigation {
   status: 'ready' | 'stale' | 'not_generated'
-  generation_method: 'rules-v1' | null
+  generation_method: 'rules-v1' | 'google-adk-v1' | null
   generated_at: string | null
   evidence_fingerprint: string | null
   report: InvestigationReport | null

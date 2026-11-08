@@ -120,6 +120,9 @@ class PipelineInvestigation(Base):
     evidence_snapshot: Mapped[dict] = mapped_column(JSONB)
     report: Mapped[dict] = mapped_column(JSONB)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    source_draft_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("pipeline_investigation_drafts.id", name="fk_investigations_source_draft", ondelete="SET NULL"), index=True,
+    )
 
 
 class PipelineInvestigationDraft(Base):

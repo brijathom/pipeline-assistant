@@ -25,10 +25,14 @@ export function RunInvestigation({ runId }: { runId: number }) {
             </div>
           )}
           {data?.status === 'not_generated' && <p className="mt-3 text-xs leading-5 text-slate-500">No investigation has been generated for this attempt.</p>}
-          {data?.status === 'stale' && <p role="status" className="mt-3 text-xs leading-5 text-amber-900">The stored evidence has changed. The previous report is hidden until a new investigation is generated.</p>}
+          {data?.status === 'stale' && <p role="status" className="mt-3 text-xs leading-5 text-amber-900">The stored report can no longer be verified. It is hidden until a current investigation is available.</p>}
           {data?.status === 'ready' && data.report && (
             <div className="mt-3 space-y-4 text-xs leading-5">
-              <p className="font-medium text-indigo-700">Rule-based evidence summary · No AI model was called.</p>
+              <p className="font-medium text-indigo-700">{
+                data.generation_method === 'rules-v1' ? 'Rule-based evidence summary · No AI model was called.'
+                  : data.generation_method === 'google-adk-v1' ? 'AI-generated investigation · Approved draft'
+                    : 'Stored investigation'
+              }</p>
               <p className="text-slate-700">{data.report.summary}</p>
               <p className="text-slate-500">Generated <SourceTime value={data.generated_at} /></p>
               {data.report.findings.map((finding, index) => (

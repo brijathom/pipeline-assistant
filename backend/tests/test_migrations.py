@@ -76,5 +76,23 @@ def test_job_migration_round_trip_preserves_existing_runs(test_engine: Engine) -
             assert connection.scalar(select(func.count()).select_from(PipelineRun)) == 1
             assert connection.scalar(select(func.count()).select_from(PipelineJob)) == 0
             assert connection.scalar(select(func.count()).select_from(PipelineJobStep)) == 0
+            # Rolling back publication support keeps the private approved source
+            # and the run, while removing the public AI copy old code cannot read.
+            draft_id = uuid4()
+            connection.execute(PipelineInvestigationDraft.__table__.insert().values(
+                id=draft_id, pipeline_run_id=run_id, content_fingerprint="c" * 64,
+                evidence_fingerprint="a" * 64, document={}, status="approved",
+                reviewed_at=datetime(2026, 11, 8, tzinfo=timezone.utc), reviewed_by="migration-test", review_note="Fixture",
+            ))
+            connection.execute(PipelineInvestigation.__table__.insert().values(
+                pipeline_run_id=run_id, generation_method="google-adk-v1", evidence_fingerprint="a" * 64,
+                evidence_snapshot={}, report={}, source_draft_id=draft_id,
+            ))
+            command.downgrade(config, "0005")
+            assert connection.scalar(select(func.count()).select_from(PipelineInvestigation)) == 0
+            assert connection.scalar(select(func.count()).select_from(PipelineInvestigationDraft)) == 1
+            assert connection.scalar(select(func.count()).select_from(PipelineRun)) == 1
+            assert "source_draft_id" not in {column["name"] for column in inspect(connection).get_columns("pipeline_investigations", schema=schema)}
+            command.upgrade(config, "head")
         finally:
             transaction.rollback()

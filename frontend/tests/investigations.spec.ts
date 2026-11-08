@@ -82,8 +82,23 @@ test.describe('stored investigations', () => {
     await expect(region.locator('blockquote')).toHaveCount(0)
     state = 'stale'
     await region.getByRole('button', { name: 'Retry investigation' }).click()
-    await expect(region.getByRole('status')).toContainText('The stored evidence has changed.')
+    await expect(region.getByRole('status')).toContainText('The stored report can no longer be verified.')
     await expect(region.locator('blockquote')).toHaveCount(0)
+  })
+
+  test('labels a published AI report and renders its evidence as plain text', async ({ page }) => {
+    await page.route('**/api/runs/701/investigation', (route) => route.fulfill({
+      json: { ...ready, generation_method: 'google-adk-v1' },
+    }))
+    await page.goto('/')
+    await page.getByRole('table').locator('tbody tr').first().getByRole('button').click()
+    const region = page.getByRole('region', { name: 'Investigation', exact: true })
+    await expect(region).toContainText('AI-generated investigation · Approved draft')
+    await expect(region).not.toContainText('No AI model was called.')
+    await expect(region.locator('blockquote')).toHaveText(ready.report!.findings[0].citation.quote)
+    await expect(region.locator('script')).toHaveCount(0)
+    expect(await page.evaluate(() => 'reportExecuted' in window)).toBeFalsy()
+    await expect(region.getByRole('button', { name: /approve|publish|generate/i })).toHaveCount(0)
   })
 
   test('distinguishes absent reports, insufficient evidence, and separate attempts', async ({ page }) => {
