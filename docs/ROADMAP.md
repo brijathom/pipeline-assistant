@@ -43,17 +43,21 @@ percentage. A milestone is complete only when its listed outcomes are verified.
   - [x] Authenticated SSE snapshots, bounded reconnects, private-data cleanup
     and verified HTTP disconnect handling. Reconnection restores current status;
     intermediate transitions are not replayed.
-- [ ] **11. Performance metrics:** defined duration and time-window calculations,
+- [x] **11. Performance metrics:** defined duration and time-window calculations,
   repository-level trends and useful dashboard presentation with appropriate tests.
+  - Job execution median/p95, 7/30/90-day UTC creation cohorts, explicit coverage
+    and exclusions, daily charts/table, query indexes and verified filter/error
+    handling. Job timings are not presented as total workflow runtime.
 - [ ] **12. Public deployment and production checks:** Docker images, Cloud Run,
   managed PostgreSQL/migrations, IAM/secrets, logs/health checks, access/rate/cost
   controls, deployment CI, public demo and documented operational trade-offs.
 
-Current next step: duration calculations and repository-level performance trends
-(milestone 11). Cloud IAM verification belongs with deployment; the local
-Pub/Sub round trip and SSE workflow are verified.
+Current next step: container images and a reproducible local container smoke
+test before configuring Cloud Run deployment. Cloud IAM verification belongs
+with deployment; the local Pub/Sub round trip and SSE workflow are verified.
 The local task workflow is documented in
 `docs/ASYNC_INVESTIGATIONS.md`.
+Metric definitions and operational limits are in `docs/PERFORMANCE_METRICS.md`.
 
 BigQuery and additional identity providers are optional choices, not completion
 requirements. Multi-user accounts are outside this personal single-operator

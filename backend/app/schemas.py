@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -26,6 +26,26 @@ class PipelineMetricsResponse(BaseModel):
     successful_runs: int
     failed_runs: int
     in_progress_runs: int
+
+
+class JobDurationSummary(BaseModel):
+    total_jobs: int
+    timed_jobs: int
+    excluded_jobs: int
+    median_job_duration_seconds: float | None
+    p95_job_duration_seconds: float | None
+
+
+class JobDurationDay(JobDurationSummary):
+    date: date
+
+
+class PipelinePerformanceResponse(JobDurationSummary):
+    repository: str | None
+    days: Literal[7, 30, 90]
+    start_at: datetime
+    end_at: datetime
+    daily: list[JobDurationDay]
 
 
 class PipelineJobStepResponse(BaseModel):

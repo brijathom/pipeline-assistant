@@ -1,14 +1,17 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { fetchMetrics } from './api/metrics'
 import { fetchRuns, RUN_LIMIT } from './api/runs'
 import { MetricsCards } from './components/MetricsCards'
+import { PerformanceMetrics } from './components/PerformanceMetrics'
 import { RunDetails } from './components/RunDetails'
 import { RunTable } from './components/RunTable'
 import { ReviewerInbox } from './components/ReviewerInbox'
 
 export default function App() {
+  const queryClient = useQueryClient()
+  const performanceFetching = useIsFetching({ queryKey: ['performance'] }) > 0
   const [repositoryInput, setRepositoryInput] = useState('')
   const [repository, setRepository] = useState<string | undefined>()
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null)
@@ -21,7 +24,7 @@ export default function App() {
     queryKey: ['metrics', { repository }],
     queryFn: ({ signal }) => fetchMetrics(signal, repository),
   })
-  const isRefreshing = runsQuery.isFetching || metricsQuery.isFetching
+  const isRefreshing = runsQuery.isFetching || metricsQuery.isFetching || performanceFetching
 
   const runs = runsQuery.data
   const isDemo = runs && runs.length > 0 && runs.every((run) => run.repository.startsWith('demo/'))
@@ -75,7 +78,7 @@ export default function App() {
             <button
               className="button"
               type="button"
-              onClick={() => void Promise.all([runsQuery.refetch(), metricsQuery.refetch()])}
+              onClick={() => void Promise.all([runsQuery.refetch(), metricsQuery.refetch(), queryClient.refetchQueries({ queryKey: ['performance'], type: 'active' })])}
               disabled={isRefreshing}
             >
               <svg className={isRefreshing ? 'animate-spin' : ''} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
@@ -148,6 +151,8 @@ export default function App() {
             )}
             <p className="mt-3 text-xs leading-5 text-slate-500">Counts cover all stored attempts for this selection, not full GitHub history. Failed includes timed out; other outcomes remain in the total.</p>
           </section>
+
+          <PerformanceMetrics repository={repository} />
 
           <section className="runs-panel" aria-labelledby="recent-runs-heading" aria-busy={runsQuery.isFetching}>
             <div className="panel-heading">

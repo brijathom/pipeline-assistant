@@ -15,6 +15,8 @@ class PipelineRun(Base):
     __tablename__ = "pipeline_runs"
     __table_args__ = (
         UniqueConstraint("repository", "github_run_id", "run_attempt", name="uq_pipeline_runs_attempt"),
+        Index("ix_pipeline_runs_created_at", "created_at"),
+        Index("ix_pipeline_runs_repository_created_at", "repository", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)

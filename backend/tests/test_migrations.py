@@ -29,6 +29,12 @@ def test_job_migration_round_trip_preserves_existing_runs(test_engine: Engine) -
             ).returning(PipelineRun.id))
 
             command.upgrade(config, "head")
+            metric_indexes = {"ix_pipeline_runs_created_at", "ix_pipeline_runs_repository_created_at"}
+            assert metric_indexes.issubset({index["name"] for index in inspect(connection).get_indexes("pipeline_runs", schema=schema)})
+            command.downgrade(config, "0008")
+            assert not metric_indexes.intersection({index["name"] for index in inspect(connection).get_indexes("pipeline_runs", schema=schema)})
+            assert connection.scalar(select(func.count()).select_from(PipelineRun)) == 1
+            command.upgrade(config, "head")
             tables = inspect(connection).get_table_names(schema=schema)
             assert {"pipeline_runs", "pipeline_jobs", "pipeline_job_steps"}.issubset(tables)
             job_id = connection.scalar(PipelineJob.__table__.insert().values(

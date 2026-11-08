@@ -791,6 +791,18 @@ This first curation workflow edits neither excerpt text nor source numbering and
 stores the current curation state and timestamp, without a separate audit history.
 No real excerpt is automatically curated by setup, testing or opening the inbox.
 
+## Job performance
+
+The dashboard shows median and p95 job execution duration, timed/excluded job
+counts, and daily trends with a 7/30/90-day selector. The repository filter also
+applies to this panel. Windows group stored jobs by their attempt's creation
+date in UTC and include today so far. Missing or invalid timings are excluded;
+small samples are labelled. These are individual job durations, so parallel
+jobs are not summed into a claimed pipeline runtime.
+
+Apply migration `0009` for the window-query indexes. See
+[metric definitions, sample rules and query trade-offs](docs/PERFORMANCE_METRICS.md).
+
 ## Background investigation tasks
 
 The protected **Reviewer inbox → Investigation tasks** view can queue a run's
