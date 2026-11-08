@@ -427,6 +427,12 @@ After migrating and importing jobs, choose a local job ID from
 .\.venv\Scripts\python.exe -m app.import_logs --job-id 123 --start-line 1
 ```
 
+If anonymous log download returns 403 and `gh` is already signed in locally, add
+`--github-cli-auth`. This uses that existing credential only for GitHub API GET
+requests, in memory. It is never written to the project or forwarded to log
+storage; private repositories are still rejected. Public run metadata being
+readable does not guarantee that the log download will be allowed anonymously.
+
 The command derives the repository and GitHub job ID from the stored job/run,
 rejects missing and fictional sources before network access, and closes the read
 session before downloading. Once processing succeeds, a short transaction locks
@@ -801,8 +807,10 @@ Live mode requires explicit case selections and a call budget; it is never the
 default. No evaluation approves or publishes a report.
 
 See [evaluation commands, recorded results and limits](docs/AI_EVALUATION.md).
-The current baseline passes 15 cases and the existing saved demo draft passes its
-general checks. These are regression results, not a model accuracy estimate.
+The current baseline passes 16 cases and the existing saved demo draft passes its
+general checks. The [first controlled live comparison](docs/LIVE_EVALUATION.md)
+records three requests and their inspection, including the failed automatic
+checks. These are regression results, not a model accuracy estimate.
 
 ## Test
 

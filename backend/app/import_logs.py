@@ -1,8 +1,9 @@
 """Explicitly import one job's processed excerpt: python -m app.import_logs --job-id ID."""
 import argparse
+import subprocess
 import sys
 
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -38,7 +39,18 @@ def _source(session: Session, job_id: int, *, lock: bool = False) -> tuple | Non
     return tuple(row) if row is not None else None
 
 
-def import_log(job_id: int, start_line: int = 1) -> None:
+def github_cli_token() -> SecretStr:
+    """Read an existing operator credential in memory; never print or persist it."""
+    try:
+        result = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, timeout=10, check=True)
+    except (OSError, subprocess.SubprocessError):
+        raise LogImportError("GitHub CLI authentication is unavailable. Sign in locally with gh before using this option.") from None
+    if not result.stdout.strip():
+        raise LogImportError("GitHub CLI returned no credential. Sign in locally with gh.")
+    return SecretStr(result.stdout.strip())
+
+
+def import_log(job_id: int, start_line: int = 1, *, api_token: SecretStr | None = None) -> None:
     engine = get_engine()
     with Session(engine) as session:
         source = _source(session, job_id)
@@ -47,7 +59,8 @@ def import_log(job_id: int, start_line: int = 1) -> None:
     if source[0].startswith("demo/"):
         raise LogImportError("Fictional demo jobs have no GitHub logs. Run the demo seeder instead.")
     try:
-        excerpt = fetch_job_log_excerpt(source[0], source[4], start_line=start_line)
+        auth = {"api_token": api_token} if api_token is not None else {}
+        excerpt = fetch_job_log_excerpt(source[0], source[4], start_line=start_line, **auth)
     except ValueError:
         raise LogImportError("The stored job identity or requested source line is invalid.") from None
     with Session(engine) as session:
@@ -61,9 +74,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Store one public job's processed excerpt without publishing it.")
     parser.add_argument("--job-id", type=_positive_id, required=True, help="Local job database ID")
     parser.add_argument("--start-line", type=_positive_id, default=1, help="First source line to include")
+    parser.add_argument("--github-cli-auth", action="store_true", help="Use the existing local gh credential in memory for API reads; never save it or send it to log storage")
     args = parser.parse_args()
     try:
-        import_log(args.job_id, args.start_line)
+        if args.github_cli_auth:
+            import_log(args.job_id, args.start_line, api_token=github_cli_token())
+        else:
+            import_log(args.job_id, args.start_line)
     except ValidationError:
         print("Invalid backend configuration. Check backend/.env and environment variables.", file=sys.stderr)
         return 1

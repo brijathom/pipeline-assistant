@@ -71,15 +71,18 @@ no tools and no access to CI write operations. Empty evidence is rejected before
 provider-client creation and appears as `blocked_no_evidence`, with zero model
 attempts. It is counted separately from graded responses.
 
-No complete model response is saved by this evaluator. Its results identify
-check failures; deeper manual review requires a separately generated private
-draft through the existing draft-generation command.
+By default no complete model response is saved. Add `--save-private-drafts` to
+retain validated, unreviewed responses and snapshots under ignored
+`backend/.evals/live-.../` for inspection without duplicate calls. The returned
+`private_draft_batch` identifies the directory. This flag is valid only in live
+mode. The directory must be writable before calls begin. These files are never
+automatically imported, approved or published.
 
 ## Corpus and checks
 
 [`evaluation_cases.py`](../backend/app/evaluation_cases.py) defines corpus
-`investigations-v1`. Each case includes provenance and explicit expected finding
-bounds. The corpus has 15 cases:
+`investigations-v2`. Each case includes provenance and explicit expected finding
+bounds. The corpus has 16 cases:
 
 | Category | Cases |
 | --- | --- |
@@ -89,12 +92,14 @@ bounds. The corpus has 15 cases:
 | Adversarial input | Instructions in log text, instructions in job name, instructions without diagnostics |
 | Redaction | Already-masked credential beside a diagnostic |
 | Recorded local failure | Exact `TypeError` diagnostic captured during local project tests |
+| Recorded GitHub success | This project's successful Backend tests summary; successful jobs stay out of failure evidence |
 
 The recorded local excerpt was inspected before inclusion; paths and surrounding
 traceback were omitted and the excerpt is labelled partial. Its provenance does
-not represent a GitHub Actions capture. The other cases are explicitly synthetic.
-Real imported GitHub examples remain subject to the protected operator-curation
-workflow before being used or shared as evaluation fixtures.
+not represent a GitHub Actions capture. The successful GitHub summary has
+its own inspected source provenance in `evaluation_samples.py`. The remaining
+cases are explicitly synthetic. Application log curation is still a separate
+operator action; the sampled application excerpt remains uncurated.
 
 [`evaluation.py`](../backend/app/evaluation.py) defines rubric `report-checks-v1`:
 
@@ -134,9 +139,9 @@ keyword policy checks can miss paraphrases and flag safe negated wording. Compil
 diagnostics currently require a cited finding, without grading a detailed causal
 explanation. A model that produces generic but compliant advice may pass.
 
-Next, an operator should curate a real imported GitHub example and perform a
-small, explicitly budgeted live comparison. Manual review should check each
-observation against its quote, distinguish hypotheses from established facts,
-assess whether the proposed read-only check is useful, and check that injected
-instructions did not change the report's purpose. Record failures as well as
-passes and keep provider failures separate from report-quality failures.
+The [first live comparison and response assessment](LIVE_EVALUATION.md) now
+records three completed requests, two fully passing automatic assessments and
+one report with two flags. One flag is an observation-completeness issue; the
+other is a heuristic false positive. The original flags are preserved. The
+current rule baseline passes all 16 cases. A real failed-job diagnosis remains
+an expansion item because this repository had no failed run to sample.

@@ -25,13 +25,14 @@ percentage. A milestone is complete only when its listed outcomes are verified.
   - [x] Approve/reject through the UI with a server-assigned operator identity.
   - [x] Explicit protected publication through the UI and conflict/error handling.
   - [x] Operator-controlled review/curation of imported real log evidence.
-- [ ] **9. AI quality evaluation:** repeatable cases for diagnostics, incomplete
+- [x] **9. AI quality evaluation:** repeatable cases for diagnostics, incomplete
   evidence and adversarial logs; recorded factuality/citation/safety results,
   including real curated examples and explicit limits on live evaluation calls.
   - [x] Versioned local corpus, deterministic rubric, rule baseline and CI gate.
   - [x] Saved AI draft assessment and explicit bounded live-evaluation command.
-  - [ ] Operator-curated GitHub example and a small live comparison with manual
-    assessment; the recorded local failure and saved demo draft are initial evidence.
+  - [x] Inspected real GitHub success example and a three-request live comparison
+    with recorded response assessment. Application log curation remains explicit;
+    a real failed-job example is future coverage when one is available.
 - [ ] **10. Asynchronous investigations:** Pub/Sub worker, persistent task state,
   idempotent delivery handling, bounded retries and SSE progress/reconnection.
 - [ ] **11. Performance metrics:** defined duration and time-window calculations,
@@ -40,9 +41,9 @@ percentage. A milestone is complete only when its listed outcomes are verified.
   managed PostgreSQL/migrations, IAM/secrets, logs/health checks, access/rate/cost
   controls, deployment CI, public demo and documented operational trade-offs.
 
-Current next step: curate an imported GitHub example and record a small live
-evaluation with manual assessment. The evaluation runner, offline baseline and
-saved-draft checks are complete; milestone 9 remains open for that evidence.
+Current next step: asynchronous investigations with persistent task state,
+Pub/Sub delivery and SSE progress. Milestone 9 records the controlled comparison,
+including its flags and limits, in `docs/LIVE_EVALUATION.md`.
 
 BigQuery and additional identity providers are optional choices, not completion
 requirements. Multi-user accounts are outside this personal single-operator

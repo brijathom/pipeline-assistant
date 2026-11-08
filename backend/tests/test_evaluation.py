@@ -116,8 +116,8 @@ def test_rules_command_does_not_load_settings_or_call_provider(monkeypatch, tmp_
     assert evaluate_ai.main() == 0
     result = json.loads(path.read_text(encoding="utf-8"))
     assert result["mode"] == "rules" and result["live_generation_attempts"] == 0
-    assert result["passed_cases"] == 15 and result["graded_reports"] == 15
-    assert result["checks"]["exact_citations"] == {"passed": 15, "evaluated": 15}
+    assert result["passed_cases"] == 16 and result["graded_reports"] == 16
+    assert result["checks"]["exact_citations"] == {"passed": 16, "evaluated": 16}
     assert all("evidence" not in item and "report" not in item for item in result["results"])
     assert "AssertionError" not in capsys.readouterr().out
 
@@ -232,8 +232,51 @@ def test_no_credentials_in_live_mode_returns_configuration_failure(monkeypatch, 
 
 def test_conditional_metric_denominators_count_only_applicable_cases() -> None:
     results, _ = asyncio.run(evaluate_ai.evaluate_cases(evaluation_cases()))
-    checks = evaluate_ai.build_summary(results, mode="rules", selected_cases=15)["checks"]
+    checks = evaluate_ai.build_summary(results, mode="rules", selected_cases=16)["checks"]
     assert checks["partial_evidence_disclosed"]["evaluated"] == 2
     assert checks["excluded_jobs_disclosed"]["evaluated"] == 2
-    assert checks["no_findings_without_lines"]["evaluated"] == 2
-    assert checks["http_status_numbers_match_quote"]["evaluated"] < 15
+    assert checks["no_findings_without_lines"]["evaluated"] == 3
+    assert checks["http_status_numbers_match_quote"]["evaluated"] < 16
+
+
+def test_live_drafts_preserve_exact_response_for_manual_review_without_exposing_it(monkeypatch, tmp_path, capsys) -> None:
+    from app import config
+    from app.config import Settings
+    from app.draft_reviews import load_draft
+    settings = Settings(_env_file=None, database_url="postgresql+psycopg://user:password@localhost/test", gemini_api_key="fake-key")
+    monkeypatch.setattr(config, "get_settings", lambda: settings)
+    monkeypatch.setattr(evaluate_ai, "PRIVATE_EVALUATION_DIRECTORY", tmp_path)
+    calls = 0
+    async def respond(evidence, **kwargs):
+        nonlocal calls
+        calls += 1
+        report = build_report(evidence)
+        report.summary = "Private model response for manual review."
+        return report
+    monkeypatch.setattr(evaluate_ai, "generate_ai_report", respond)
+    monkeypatch.setattr(sys, "argv", ["evaluate_ai", "--mode", "live", "--case", "http-503", "--max-calls", "1", "--save-private-drafts"])
+    assert evaluate_ai.main() == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert calls == 1 and "Private model response" not in json.dumps(summary)
+    draft = load_draft(tmp_path / summary["private_draft_batch"] / "http-503.json")
+    assert draft.status == "pending_review" and draft.report.summary == "Private model response for manual review."
+    assert draft.evidence_fingerprint == summary["results"][0]["evidence_fingerprint"]
+
+
+def test_unwritable_private_destination_prevents_provider_calls(monkeypatch, tmp_path) -> None:
+    from app import config
+    from app.config import Settings
+    settings = Settings(_env_file=None, database_url="postgresql+psycopg://user:password@localhost/test", gemini_api_key="fake-key")
+    monkeypatch.setattr(config, "get_settings", lambda: settings)
+    destination = tmp_path / "file"
+    destination.write_text("not a directory", encoding="utf-8")
+    monkeypatch.setattr(evaluate_ai, "PRIVATE_EVALUATION_DIRECTORY", destination)
+    async def forbidden(*args, **kwargs): pytest.fail("No provider call before a writable private destination")
+    monkeypatch.setattr(evaluate_ai, "generate_ai_report", forbidden)
+    monkeypatch.setattr(sys, "argv", ["evaluate_ai", "--mode", "live", "--case", "http-503", "--max-calls", "1", "--save-private-drafts"])
+    assert evaluate_ai.main() == 2
+
+
+def test_private_drafts_flag_requires_live_mode(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["evaluate_ai", "--save-private-drafts"])
+    with pytest.raises(SystemExit): evaluate_ai.main()

@@ -219,3 +219,27 @@ def test_invalid_inputs_do_not_make_http_requests(repository: str, job_id: int, 
 
     with pytest.raises(ValueError):
         fetch_job_log_excerpt(repository, job_id, start_line=start_line, transport=httpx.MockTransport(handle))
+
+
+@pytest.mark.parametrize("private", [False, True])
+def test_optional_operator_token_is_api_only_and_never_bypasses_public_repository_check(private: bool) -> None:
+    from pydantic import SecretStr
+    requests = []
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.host == "api.github.com":
+            assert request.headers["authorization"] == "Bearer fake-operator-token"
+            if request.url.path == "/repos/example/project":
+                return httpx.Response(200, json={"private": private}, headers={"set-cookie": "api_only=fake; Path=/"})
+            return httpx.Response(302, headers={"location": DOWNLOAD_URL})
+        assert "authorization" not in request.headers and "cookie" not in request.headers
+        assert "x-github-api-version" not in request.headers
+        return httpx.Response(200, stream=ProbeStream([b"484 passed, 1 warning"]))
+    options = {"transport": httpx.MockTransport(handle), "api_token": SecretStr("fake-operator-token")}
+    if private:
+        with pytest.raises(GitHubError, match="Only public"):
+            fetch_job_log_excerpt("example/project", 123, **options)
+        assert len(requests) == 1
+    else:
+        excerpt = fetch_job_log_excerpt("example/project", 123, **options)
+        assert excerpt.lines[0].text == "484 passed, 1 warning" and len(requests) == 3

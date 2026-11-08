@@ -3,21 +3,24 @@ import argparse
 import asyncio
 import json
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 from pydantic import SecretStr, ValidationError
 
-from app.ai_investigation import AIGenerationError, INSTRUCTION, PROMPT_VERSION, generate_ai_report
-from app.draft_reviews import DraftReviewError, load_draft
+from app.ai_investigation import AIGenerationError, INSTRUCTION, PROMPT_VERSION, THINKING_LEVEL, generate_ai_report
+from app.draft_reviews import DraftDocument, DraftReviewError, load_draft
 from app.evaluation import CaseResult, RUBRIC_VERSION, grade_json, grade_report
 from app.evaluation_cases import CORPUS_VERSION, EvaluationCase, evaluation_cases
+from app.evaluation_samples import GITHUB_SUCCESS_SAMPLE
 from app.investigations import EvidenceBundle, build_report, document_fingerprint, evidence_fingerprint
 from app.schemas import InvestigationReport
 
 MAX_LIVE_CALLS = 5
+PRIVATE_EVALUATION_DIRECTORY = Path(__file__).resolve().parents[1] / ".evals"
 
 
 def _result(case_id: str, category: str, outcome: str, evidence: EvidenceBundle, checks: dict[str, bool], report: InvestigationReport | None = None) -> CaseResult:
@@ -25,7 +28,11 @@ def _result(case_id: str, category: str, outcome: str, evidence: EvidenceBundle,
         document_fingerprint(report.model_dump(mode="json")) if report is not None else None)
 
 
-async def evaluate_cases(cases: Sequence[EvaluationCase], *, mode: str = "rules", api_key: SecretStr | None = None, model_name: str | None = None) -> tuple[list[CaseResult], int]:
+async def evaluate_cases(
+    cases: Sequence[EvaluationCase], *, mode: str = "rules", api_key: SecretStr | None = None,
+    model_name: str | None = None,
+    save_report: Callable[[EvaluationCase, InvestigationReport], None] | None = None,
+) -> tuple[list[CaseResult], int]:
     results = []
     attempts = 0
     for case in cases:
@@ -44,6 +51,8 @@ async def evaluate_cases(cases: Sequence[EvaluationCase], *, mode: str = "rules"
                 report = await generate_ai_report(case.evidence, api_key=api_key, model_name=model_name)
             else:
                 report = build_report(case.evidence)
+            if save_report is not None:
+                save_report(case, report)
             checks, parsed = grade_json(report.model_dump_json(), case.evidence, case)
             results.append(_result(case.id, case.category, "graded", case.evidence, checks, parsed))
         except AIGenerationError:
@@ -54,16 +63,27 @@ async def evaluate_cases(cases: Sequence[EvaluationCase], *, mode: str = "rules"
     return results, attempts
 
 
+def save_private_draft(directory: Path, case: EvaluationCase, report: InvestigationReport, model: str) -> None:
+    """Retain the exact response once for manual review; never imports or publishes."""
+    document = DraftDocument(
+        generation_method="google-adk-v1", model=model, prompt_version=PROMPT_VERSION,
+        generated_at=datetime.now(timezone.utc), thinking_level=THINKING_LEVEL,
+        evidence_fingerprint=evidence_fingerprint(case.evidence), evidence_snapshot=case.evidence, report=report,
+    )
+    with (directory / f"{case.id}.json").open("x", encoding="utf-8", newline="\n") as output:
+        output.write(document.model_dump_json(indent=2) + "\n")
+
+
 def build_summary(results: list[CaseResult], *, mode: str, selected_cases: int, live_attempts: int = 0, model: str | None = None, prompt_version: str = PROMPT_VERSION) -> dict:
     names = sorted({name for result in results for name in result.checks})
     return {
         "format_version": 1, "corpus_version": CORPUS_VERSION if mode != "saved" else None, "rubric_version": RUBRIC_VERSION,
         "instruction_fingerprint": document_fingerprint({"instruction": INSTRUCTION}) if mode == "live" else None,
         "corpus_fingerprint": document_fingerprint({"cases": [{
-            "id": case.id, "evidence": case.evidence.model_dump(mode="json"),
+            "id": case.id, "provenance": case.provenance, "evidence": case.evidence.model_dump(mode="json"),
             "min_findings": case.min_findings, "max_findings": case.max_findings,
             "observation_terms": case.observation_terms,
-        } for case in evaluation_cases()]}) if mode != "saved" else None,
+        } for case in evaluation_cases()], "reference_samples": {"github_success": GITHUB_SUCCESS_SAMPLE}}) if mode != "saved" else None,
         "evaluated_at": datetime.now(timezone.utc).isoformat(), "mode": mode,
         "model": model, "prompt_version": prompt_version if mode != "rules" else None, "live_generation_attempts": live_attempts,
         "selected_cases": selected_cases, "completed_cases": len(results),
@@ -91,6 +111,7 @@ def main() -> int:
     parser.add_argument("--case", dest="case_ids", action="append", choices=[case.id for case in cases], help="Repeat to select cases; required in live mode")
     parser.add_argument("--max-calls", type=int, help=f"Required explicit live budget, 1-{MAX_LIVE_CALLS}; one request per selected case, no retries")
     parser.add_argument("--draft", type=Path, help="Private draft JSON for saved mode; checked locally without model calls")
+    parser.add_argument("--save-private-drafts", action="store_true", help="Live only: save unreviewed snapshots/reports under ignored backend/.evals for manual review")
     parser.add_argument("--output", type=Path, help="Write metadata/checks only to a NEW JSON file; existing files are not overwritten")
     args = parser.parse_args()
     selected = [case for case in cases if args.case_ids is None or case.id in args.case_ids]
@@ -103,12 +124,15 @@ def main() -> int:
             parser.error("Selected cases exceed the explicit call budget.")
     elif args.max_calls is not None:
         parser.error("--max-calls is only valid with --mode live.")
+    if args.save_private_drafts and args.mode != "live":
+        parser.error("--save-private-drafts is only valid with --mode live.")
     if (args.mode == "saved") != (args.draft is not None) or (args.mode == "saved" and args.case_ids):
         parser.error("Saved mode requires --draft and does not accept --case; it uses general checks without scenario labels.")
     if args.output is not None and (args.output.exists() or args.draft is not None and args.output.resolve() == args.draft.resolve()):
         parser.error("Choose a new output file; draft and result files cannot be overwritten.")
     try:
         model = None
+        private_batch = None
         prompt_version = PROMPT_VERSION
         if args.mode == "saved":
             document = load_draft(args.draft)
@@ -118,6 +142,7 @@ def main() -> int:
             model, prompt_version = document.model, document.prompt_version
         else:
             key = None
+            save_report = None
             if args.mode == "live":
                 from app.config import get_settings
                 settings = get_settings()
@@ -125,9 +150,16 @@ def main() -> int:
                 if key is None or not key.get_secret_value().strip():
                     print("Configure GEMINI_API_KEY locally before using live mode.", file=sys.stderr)
                     return 2
-            results, attempts = asyncio.run(evaluate_cases(selected, mode=args.mode, api_key=key, model_name=model))
+                if args.save_private_drafts:
+                    private_batch = f"live-{uuid4().hex}"
+                    directory = PRIVATE_EVALUATION_DIRECTORY / private_batch
+                    # Fail an unwritable destination before making any model call.
+                    directory.mkdir(parents=True, exist_ok=False)
+                    save_report = lambda case, report: save_private_draft(directory, case, report, model)
+            results, attempts = asyncio.run(evaluate_cases(selected, mode=args.mode, api_key=key, model_name=model, save_report=save_report))
             selected_count = len(selected)
         summary = build_summary(results, mode=args.mode, selected_cases=selected_count, live_attempts=attempts, model=model, prompt_version=prompt_version)
+        summary["private_draft_batch"] = private_batch
         serialized = json.dumps(summary, indent=2) + "\n"
         if args.output is not None:
             args.output.parent.mkdir(parents=True, exist_ok=True)

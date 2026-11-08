@@ -3,7 +3,7 @@ import re
 from urllib.parse import urlsplit
 
 import httpx
-from pydantic import AwareDatetime, BaseModel, Field, ValidationError
+from pydantic import AwareDatetime, BaseModel, Field, SecretStr, ValidationError
 
 from app.log_processing import MAX_INPUT_BYTES, LogExcerpt, LogProcessingError, process_log
 from app.repositories import normalize_repository
@@ -60,13 +60,14 @@ class _JobPage(BaseModel):
     jobs: list[GitHubJob] = Field(max_length=JOBS_PER_PAGE)
 
 
-def _client(transport: httpx.BaseTransport | None) -> httpx.Client:
+def _client(transport: httpx.BaseTransport | None, *, api_token: SecretStr | None = None) -> httpx.Client:
     return httpx.Client(
         base_url="https://api.github.com/",
         headers={
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2026-03-10",
             "User-Agent": "Pipeline-Assistant/0.1",
+            **({"Authorization": f"Bearer {api_token.get_secret_value()}"} if api_token else {}),
         },
         timeout=httpx.Timeout(10.0, connect=5.0),
         follow_redirects=False,
@@ -205,10 +206,12 @@ def fetch_job_log_excerpt(
     *,
     start_line: int = 1,
     transport: httpx.BaseTransport | None = None,
+    api_token: SecretStr | None = None,
 ) -> LogExcerpt:
     """Fetch one public job log into memory and return only a processed excerpt.
 
-    No authentication, retries, disk writes, or automatic redirects. The only
+    No retries, disk writes, or automatic redirects. An optional operator token
+    is sent only to GitHub's API, never the redirected download host. The only
     allowed redirect is GitHub's initial 302 to a validated HTTPS log host.
     Raw logs and signed URLs must never be persisted or included in diagnostics.
     """
@@ -218,7 +221,7 @@ def fetch_job_log_excerpt(
     if type(start_line) is not int or start_line < 1:
         raise ValueError("start_line must be a positive integer")
     try:
-        with _client(transport) as client:
+        with _client(transport, api_token=api_token) as client:
             try:
                 metadata = _Repository.model_validate(_get(client, f"repos/{repository}").json())
             except (ValidationError, ValueError):

@@ -1,4 +1,5 @@
 import sys
+import subprocess
 
 import pytest
 from sqlalchemy import delete, select
@@ -125,3 +126,35 @@ def test_invalid_arguments_never_open_database(monkeypatch: pytest.MonkeyPatch, 
     with pytest.raises(SystemExit) as error:
         import_logs.main()
     assert error.value.code == 2
+
+
+def test_explicit_cli_auth_is_in_memory_and_never_printed(monkeypatch, capsys) -> None:
+    def credential(command, **options):
+        assert command == ["gh", "auth", "token"]
+        assert options == {"capture_output": True, "text": True, "timeout": 10, "check": True}
+        return subprocess.CompletedProcess(command, 0, stdout="fake-private-token\n", stderr="")
+    monkeypatch.setattr(import_logs.subprocess, "run", credential)
+    calls = []
+    def import_one(job_id, start_line, *, api_token):
+        assert api_token.get_secret_value() == "fake-private-token"
+        calls.append((job_id, start_line))
+    monkeypatch.setattr(import_logs, "import_log", import_one)
+    monkeypatch.setattr(sys, "argv", ["import_logs", "--job-id", "5", "--github-cli-auth"])
+    assert import_logs.main() == 0 and calls == [(5, 1)]
+    captured = capsys.readouterr()
+    assert "fake-private-token" not in captured.out + captured.err
+
+
+@pytest.mark.parametrize("problem", ["missing", "failure", "timeout", "empty"])
+def test_cli_credential_failures_are_safe_and_prevent_import(monkeypatch, capsys, problem) -> None:
+    def credential(*args, **kwargs):
+        if problem == "missing": raise FileNotFoundError("private-command-detail")
+        if problem == "failure": raise subprocess.CalledProcessError(1, "gh", stderr="private-token-in-stderr")
+        if problem == "timeout": raise subprocess.TimeoutExpired("gh", 10, stderr="private-token-in-stderr")
+        return subprocess.CompletedProcess("gh", 0, stdout="\n", stderr="private-token-in-stderr")
+    monkeypatch.setattr(import_logs.subprocess, "run", credential)
+    monkeypatch.setattr(import_logs, "import_log", lambda *args, **kwargs: pytest.fail("No import without successful local authentication"))
+    monkeypatch.setattr(sys, "argv", ["import_logs", "--job-id", "5", "--github-cli-auth"])
+    assert import_logs.main() == 1
+    captured = capsys.readouterr()
+    assert all(secret not in captured.out + captured.err for secret in ("private-command-detail", "private-token-in-stderr"))
