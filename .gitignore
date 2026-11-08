@@ -38,6 +38,7 @@ test-results/
 *.sqlite
 *.sqlite3
 .drafts/
+.evals/
 
 # Operating system files
 .DS_Store

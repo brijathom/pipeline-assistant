@@ -28,6 +28,10 @@ percentage. A milestone is complete only when its listed outcomes are verified.
 - [ ] **9. AI quality evaluation:** repeatable cases for diagnostics, incomplete
   evidence and adversarial logs; recorded factuality/citation/safety results,
   including real curated examples and explicit limits on live evaluation calls.
+  - [x] Versioned local corpus, deterministic rubric, rule baseline and CI gate.
+  - [x] Saved AI draft assessment and explicit bounded live-evaluation command.
+  - [ ] Operator-curated GitHub example and a small live comparison with manual
+    assessment; the recorded local failure and saved demo draft are initial evidence.
 - [ ] **10. Asynchronous investigations:** Pub/Sub worker, persistent task state,
   idempotent delivery handling, bounded retries and SSE progress/reconnection.
 - [ ] **11. Performance metrics:** defined duration and time-window calculations,
@@ -36,9 +40,9 @@ percentage. A milestone is complete only when its listed outcomes are verified.
   managed PostgreSQL/migrations, IAM/secrets, logs/health checks, access/rate/cost
   controls, deployment CI, public demo and documented operational trade-offs.
 
-Current next step: a repeatable AI quality evaluation with diagnostic, incomplete
-and adversarial evidence cases. Milestone 8 is complete; curating actual imported
-examples for evaluation remains an explicit operator action.
+Current next step: curate an imported GitHub example and record a small live
+evaluation with manual assessment. The evaluation runner, offline baseline and
+saved-draft checks are complete; milestone 9 remains open for that evidence.
 
 BigQuery and additional identity providers are optional choices, not completion
 requirements. Multi-user accounts are outside this personal single-operator

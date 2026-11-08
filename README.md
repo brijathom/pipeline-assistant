@@ -785,6 +785,25 @@ This first curation workflow edits neither excerpt text nor source numbering and
 stores the current curation state and timestamp, without a separate audit history.
 No real excerpt is automatically curated by setup, testing or opening the inbox.
 
+## Investigation quality evaluation
+
+From `backend`, run the local rule baseline without a database or model calls:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.evaluate_ai
+```
+
+The versioned corpus covers diagnostics, missing/partial evidence, adversarial
+log text and names, and a recorded local failure. Results separate exact citation
+checks from narrow observation and safety heuristics. Existing AI draft files
+can be checked locally with `--mode saved --draft .drafts/YOUR_DRAFT.json`.
+Live mode requires explicit case selections and a call budget; it is never the
+default. No evaluation approves or publishes a report.
+
+See [evaluation commands, recorded results and limits](docs/AI_EVALUATION.md).
+The current baseline passes 15 cases and the existing saved demo draft passes its
+general checks. These are regression results, not a model accuracy estimate.
+
 ## Test
 
 From `backend`:
@@ -842,7 +861,7 @@ requests. Two independent Ubuntu 24.04 jobs check the application:
 
 - **Backend tests:** reads Python from `backend/.python-version`, installs the
   backend with development and optional AI dependencies, checks dependency consistency, and runs
-  Pytest. A disposable PostgreSQL 17 service exposes port 5433 with the dedicated
+  Pytest and the offline rule-evaluation baseline. A disposable PostgreSQL 17 service exposes port 5433 with the dedicated
   test database settings. The test fixture applies migrations and rolls back test
   data. `TEST_DATABASE_URL` is set explicitly so integration tests run in CI.
 - **Frontend build:** reads Node from `frontend/.node-version`, installs the

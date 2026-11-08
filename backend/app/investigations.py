@@ -15,7 +15,10 @@ from app.schemas import (
 
 GENERATION_METHOD = "rules-v1"
 MAX_EVIDENCE_JOBS = 10
-_DIAGNOSTIC = re.compile(r"\b(?:AssertionError|Error|Exception|FAILED|timed out)\b", re.IGNORECASE)
+_DIAGNOSTIC = re.compile(
+    r"\b(?:[A-Za-z_][A-Za-z0-9_]*(?:Error|Exception)|Error|Exception|FAILED|timed out)\b",
+    re.IGNORECASE,
+)
 _HTTP_ASSERTION = re.compile(r"expected HTTP (\d{3}), received HTTP (\d{3})", re.IGNORECASE)
 
 
