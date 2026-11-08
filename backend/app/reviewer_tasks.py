@@ -1,43 +1,37 @@
 """Protected task submission/status. Generation occurs only in a separate worker."""
+from collections.abc import Callable
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.database import get_session
 from app.investigation_tasks import TaskError, enqueue_task
-from app.models import InvestigationTask, PipelineRun
+from app.models import InvestigationTask
 from app.reviewer_auth import require_reviewer
 from app.schemas import InvestigationTaskRequest, InvestigationTaskResponse
+from app.task_queries import list_task_summaries, task_summary_query
+from app.task_events import get_task_snapshot_reader, open_task_stream
 
 router = APIRouter(prefix="/api/reviewer/tasks", tags=["reviewer"], dependencies=[Depends(require_reviewer)])
 
 
-def _summaries():
-    # Status polling must never load the evidence JSON or report content.
-    return select(
-        InvestigationTask.id, InvestigationTask.pipeline_run_id, PipelineRun.repository,
-        PipelineRun.github_run_id, PipelineRun.run_attempt, InvestigationTask.status,
-        InvestigationTask.model, InvestigationTask.prompt_version, InvestigationTask.created_at,
-        InvestigationTask.started_at, InvestigationTask.completed_at, InvestigationTask.draft_id, InvestigationTask.error_code,
-        ((InvestigationTask.dispatch_attempts >= 5) & InvestigationTask.dispatched_at.is_(None)
-         & (InvestigationTask.status == "queued")).label("dispatch_exhausted"),
-    ).join(PipelineRun, PipelineRun.id == InvestigationTask.pipeline_run_id)
-
-
 @router.get("", response_model=list[InvestigationTaskResponse])
 def list_tasks(session: Annotated[Session, Depends(get_session)], limit: Annotated[int, Query(ge=1, le=50)] = 20) -> list[dict]:
-    rows = session.execute(_summaries().order_by(InvestigationTask.created_at.desc(), InvestigationTask.id.desc()).limit(limit))
-    return [dict(row._mapping) for row in rows]
+    return list_task_summaries(session, limit)
+
+
+@router.get("/events")
+async def stream_tasks(request: Request, read: Annotated[Callable, Depends(get_task_snapshot_reader)]):
+    return await open_task_stream(request, read)
 
 
 @router.get("/{task_id}", response_model=InvestigationTaskResponse)
 def get_task(task_id: UUID, session: Annotated[Session, Depends(get_session)]) -> dict:
-    row = session.execute(_summaries().where(InvestigationTask.id == task_id)).one_or_none()
+    row = session.execute(task_summary_query().where(InvestigationTask.id == task_id)).one_or_none()
     if row is None:
         raise HTTPException(404, "Investigation task not found.")
     return dict(row._mapping)

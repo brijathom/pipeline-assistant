@@ -808,8 +808,9 @@ running or completed task. Evidence is checked before and after generation;
 success stores a private draft without approving or publishing it. The worker
 uses Gemini quota under the existing account settings. Optional Pub/Sub commands
 dispatch queued task UUIDs and consume messages in bounded batches, with saved
-publication attempts and safe duplicate handling. The inbox still uses status
-polling; SSE is next. Local emulator setup, the verified transport round trip
+publication attempts and safe duplicate handling. The inbox receives authenticated
+SSE status snapshots, reconnects with bounded retries and restores current state
+after disconnects. Local emulator setup, the verified transport round trip
 and the remaining cloud IAM checks are described in the linked instructions.
 
 See [task lifecycle, recovery and local instructions](docs/ASYNC_INVESTIGATIONS.md).

@@ -2,8 +2,8 @@
 
 The protected inbox can queue an investigation and show its persisted status.
 A separate worker creates an unreviewed draft. Tasks can be processed by UUID
-or dispatched through Pub/Sub. The inbox currently uses status polling; SSE
-progress is the next integration.
+or dispatched through Pub/Sub. The inbox receives authenticated SSE snapshots
+and reconnects to restore current persisted status.
 
 The task record is the source of truth. The web process never launches a model
 request in memory after returning an HTTP response. This fits later delivery by
@@ -33,8 +33,8 @@ UUID from the list and run the separate worker from another terminal in `backend
 
 This explicit command can consume Gemini quota or incur charges under the existing
 account settings. It attempts at most one bounded generation for this task.
-While tasks are queued or running, the inbox refreshes the twenty most recent
-statuses every two seconds. **Review drafts** opens the existing private review
+While the task view is open, the server checks the twenty most recent
+statuses every two seconds and streams changes. **Review drafts** opens the existing private review
 view after success. Neither queueing nor processing approves or publishes a report.
 
 ## Lifecycle and request identity
@@ -61,7 +61,7 @@ version and evidence fingerprint are stored with the task. The browser cannot
 supply these values or an arbitrary snapshot.
 
 `GET /api/reviewer/tasks` accepts a bounded `limit` (default 20, maximum 50).
-`GET /api/reviewer/tasks/{uuid}` returns one status. Both omit snapshots and
+`GET /api/reviewer/tasks/{uuid}` returns one status. Both omit evidence snapshots and
 report content. All routes require the existing reviewer bearer credential and
 use private `no-store` response headers. Public endpoints remain read-only.
 
@@ -228,10 +228,76 @@ keep this small sequential worker bounded and easy to shut down.
 
 ## SSE progress
 
-SSE will stream persisted status changes with authenticated fetch streaming,
-reconnection and bounded connection lifetimes. The reviewer token must remain
-in the Authorization header, with no credential in a URL. SSE is not yet
-implemented. No GCP resources were created during this local transport work.
+`GET /api/reviewer/tasks/events` opens an authenticated `text/event-stream`
+response. The static route is registered before the task UUID route. It uses
+the same reviewer bearer authentication and `no-store`/`Vary: Authorization`
+headers as other private reads. Authentication precedes database access and
+stream admission; putting a token in a URL never authenticates a request.
+
+Each connection immediately sends a complete `tasks` event containing up to 20
+recent task summaries. The server checks PostgreSQL every two seconds, emits
+another snapshot only when metadata changes, and sends a comment heartbeat
+after ten seconds without an update. Events contain no logs, evidence snapshots,
+report text, review notes or credentials. A SHA-256 `id` identifies the snapshot
+contents; it is not a sequential event-history position.
+
+Reconnection always sends a fresh snapshot, including if `Last-Event-ID` is
+present. This is current-state recovery, **not replay of every transition**. A
+task might go from queued to succeeded while disconnected without the client
+seeing running. PostgreSQL is the source of truth, so API/worker restarts do
+not erase progress. No event-history table or additional broker is needed.
+The list is limited to the latest 20 tasks; older tasks remain available through
+the protected single-task status API.
+
+The synchronous SQLAlchemy reads run in a thread pool, close the session before
+any stream wait, and have a three-second statement timeout. There is no database
+transaction pinned to an open browser connection. Four simultaneous streams
+are allowed per API process; excess authenticated requests receive 429 with
+`Retry-After: 5`. A stream targets a 45-second lifetime (an outstanding database
+read can extend this), then sends `rotate` and closes. Initial read/validation
+failure returns a safe 503 before streaming headers. A later failure sends
+`stream-error` and closes. Capacity is released on completion, cancellation,
+client disconnect and send failure, including before body iteration begins.
+
+The browser uses `fetch`/`ReadableStream` so the token stays in the Authorization
+header. Requests omit cookies, disable cache and reject redirects. The parser
+handles UTF-8 split across chunks, LF/CRLF/CR framing, comments and multiline
+data; it rejects incomplete events, oversized frames and invalid metadata.
+Snapshots have a 128 KiB server byte cap and client character cap, with at most
+20 tasks. Incoming fields are checked before they reach the view.
+
+Expected `rotate` events reconnect after 500 ms and preserve the last verified
+view until resynchronization. Unexpected EOF, stream errors, HTTP errors,
+invalid data or timeouts clear displayed task metadata. After failed connections,
+the browser waits 1, 2, 4 and 8 seconds, then stops after five failures.
+Receiving a snapshot alone does not reset the budget: a server repeatedly
+returning one snapshot and disconnecting cannot trigger an endless retry loop.
+A valid snapshot followed by an intentional rotation resets it. `Refresh tasks`
+starts a new bounded connection sequence. Requests also have a 15-second idle
+timeout and 60-second total client lifetime. Authorization failure locks the
+inbox immediately.
+
+Locking, closing or navigating away aborts the connection and pending retry
+timers. Late chunks cannot restore private data. Stream snapshots live only in
+the mounted task view, outside the public query cache. Successful submissions
+and uncertain submission errors reconnect to refresh persisted state; no stream
+retry creates a task or repeats a model request. New submissions are disabled
+until live status is available. There is no automatic fallback to browser GET
+polling; manual refresh remains available when streaming is unavailable.
+
+This implementation deliberately keeps server-side polling for a small
+single-operator app. At four active streams, status reads are roughly two queries
+per second per API process. A larger audience would justify shared change
+notifications rather than one database watcher per connection. Per-process caps
+do not replace service-wide instance, access and cost controls at deployment.
+Configure proxies/Cloud Run to permit a stream longer than 45 seconds and verify
+that response buffering/compression does not delay frames. `X-Accel-Buffering: no`
+is supplied for compatible proxies; real deployment behavior remains a check.
+Google IAM and unattended worker scheduling remain deployment work. No GCP
+resources or model calls were created by this SSE implementation.
+
+See the [Starlette streaming response documentation](https://www.starlette.io/responses/)
+and the [SSE protocol and framing specification](https://html.spec.whatwg.org/dev/server-sent-events.html).
 
 ## Verification
 
@@ -240,10 +306,17 @@ delivery during/after generation, unsafe/invalid reports, stale evidence,
 ambiguous final commits and late-result fencing. An integration test drives the
 real ADK runner with a fake local model and no provider traffic. Migration tests
 verify rollback preserves runs, evidence, drafts and existing public reports.
-Browser tests cover queueing, polling, explicit same-ID retry and private-data
+Browser tests cover queueing, live snapshots, explicit same-ID retry and private-data
 cleanup. Transport tests cover exact UUID payloads, persisted delay/attempt
 limits, duplicate publication, acknowledgement/nack decisions, local-only
 initialization and subscription policy validation. None makes a paid model call.
+
+SSE tests cover authentication before reads, private headers, snapshot limits,
+fresh reconnects, heartbeats, safe errors, stream admission and cancellation.
+A real loopback HTTP test verifies immediate frame flushing and capacity release
+when a client disconnects early. Browser checks cover an open stream updating
+status, lock aborts, bounded reconnects/manual recovery, split UTF-8/newlines,
+invalid payloads and private-data hiding.
 
 An opt-in integration test uses Google's actual emulator, the guarded PostgreSQL
 test database and a fake model:

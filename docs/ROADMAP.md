@@ -33,24 +33,27 @@ percentage. A milestone is complete only when its listed outcomes are verified.
   - [x] Inspected real GitHub success example and a three-request live comparison
     with recorded response assessment. Application log curation remains explicit;
     a real failed-job example is future coverage when one is available.
-- [ ] **10. Asynchronous investigations:** Pub/Sub worker, persistent task state,
+- [x] **10. Asynchronous investigations:** Pub/Sub worker, persistent task state,
   idempotent delivery handling, bounded retries and SSE progress/reconnection.
   - [x] Durable task state, protected queue/status APIs, one-attempt local worker,
     duplicate handling and operator status polling.
   - [x] Pub/Sub dispatch/consumption and bounded delivery recovery, verified with
     Google's local emulator and fake AI. Cloud clients use ADC; actual cloud IAM
     verification remains part of deployment in milestone 12.
-  - [ ] Authenticated SSE progress and reconnection.
+  - [x] Authenticated SSE snapshots, bounded reconnects, private-data cleanup
+    and verified HTTP disconnect handling. Reconnection restores current status;
+    intermediate transitions are not replayed.
 - [ ] **11. Performance metrics:** defined duration and time-window calculations,
   repository-level trends and useful dashboard presentation with appropriate tests.
 - [ ] **12. Public deployment and production checks:** Docker images, Cloud Run,
   managed PostgreSQL/migrations, IAM/secrets, logs/health checks, access/rate/cost
   controls, deployment CI, public demo and documented operational trade-offs.
 
-Current next step: authenticated SSE progress. Cloud IAM verification belongs
-with deployment; the local Pub/Sub round trip is verified.
+Current next step: duration calculations and repository-level performance trends
+(milestone 11). Cloud IAM verification belongs with deployment; the local
+Pub/Sub round trip and SSE workflow are verified.
 The local task workflow is documented in
-`docs/ASYNC_INVESTIGATIONS.md`; milestone 10 remains open.
+`docs/ASYNC_INVESTIGATIONS.md`.
 
 BigQuery and additional identity providers are optional choices, not completion
 requirements. Multi-user accounts are outside this personal single-operator
