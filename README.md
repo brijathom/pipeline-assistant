@@ -489,7 +489,7 @@ content on a refresh error because freshness could not be verified. **Refresh
 investigation** reloads stored data and does not generate a report. No public
 generation endpoint is exposed.
 
-The next major work remains live model evaluation, authenticated review/approval
+The next major work remains broader model evaluation, authenticated review/approval
 workflows, Pub/Sub processing and SSE progress, timing metrics, and containerized
 public deployment on Google Cloud Run with production checks.
 
@@ -558,8 +558,8 @@ successful run creates a uniquely named JSON file under ignored `backend/.drafts
 containing `pending_review` status, model/prompt/thinking-level metadata, evidence fingerprint,
 snapshot, and report. Existing files and public database reports are not replaced.
 Review the draft in your editor for factual claims, citations, sensitive values,
-and recommendations. Approval and publication are not implemented in this slice;
-the API and UI never read these draft files.
+and recommendations. Local review commands are described below; the API and UI
+never read these draft files.
 
 Tests exercise the real ADK runner with a fake model, plus the real Gemini client
 with mocked HTTP. They cover output validation, invented citations, provider
@@ -578,7 +578,46 @@ of 3.8 Flash's API timeouts remains unresolved.
 The first draft identified the HTTP 200-versus-503 assertion, recommended manual
 inspection, and acknowledged the truncated excerpt. This one fictional case is
 a smoke test, not a broad evaluation of model quality. Private drafts remain
-`pending_review`; broader quality evaluation and human approval are future work.
+`pending_review` until explicitly reviewed; broader quality evaluation and
+authenticated web approval are future work.
+
+### Local private draft review
+
+Apply migration `0005`, then import a generated JSON file from `backend`:
+
+```powershell
+.\.venv\Scripts\python.exe -m alembic upgrade head
+.\.venv\Scripts\python.exe -m app.review_draft import --path .drafts/YOUR_DRAFT.json
+```
+
+The import validates the document, evidence fingerprint, exact citations, and
+current curated evidence before creating a private `pending_review` row in
+`pipeline_investigation_drafts`. Files are bounded at 1 MiB. The stored document
+contains the original report, snapshot, and generation metadata. Review state
+lives in separate columns. Reimporting the same normalized document returns the
+same UUID and preserves any existing decision.
+
+After reading the file, replace `DRAFT_UUID` with the UUID printed by import:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.review_draft review --draft-id DRAFT_UUID --decision approved --reviewer local-reviewer --note "Checked the observations, citations, limitations and recommendations."
+```
+
+Use `--decision rejected` to reject instead. Both decisions require a reviewer
+name and a reason, and record a database timestamp. Only `pending_review` can
+transition to `approved` or `rejected`; final decisions cannot be overwritten
+through these commands. Review locks the draft row and refreshes its state to
+serialize competing reviewers. Approval revalidates payload integrity, citations,
+and current evidence. Changed or withdrawn evidence blocks approval; rejection
+remains available. Any later publication must recheck freshness because evidence
+can change after approval.
+
+These are trusted local developer commands, with a self-reported reviewer name;
+they do not provide authenticated identity or tamper-proof audit history. Draft
+documents are unchanged by review. Approval records a decision only: the public
+rule-based report is preserved, no workflow action runs, and no model is called.
+No public draft/review endpoint is exposed. Authentication and publication are
+separate future features.
 
 ## Test
 

@@ -1,8 +1,9 @@
 from datetime import datetime
+from uuid import UUID, uuid4
 
 from sqlalchemy import (
     BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Identity, String, Text,
-    UniqueConstraint, func,
+    UniqueConstraint, Uuid, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import JSONB
@@ -119,3 +120,32 @@ class PipelineInvestigation(Base):
     evidence_snapshot: Mapped[dict] = mapped_column(JSONB)
     report: Mapped[dict] = mapped_column(JSONB)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PipelineInvestigationDraft(Base):
+    __tablename__ = "pipeline_investigation_drafts"
+    __table_args__ = (
+        UniqueConstraint("content_fingerprint", name="uq_investigation_drafts_content"),
+        CheckConstraint("content_fingerprint ~ '^[0-9a-f]{64}$' AND evidence_fingerprint ~ '^[0-9a-f]{64}$'", name="ck_investigation_drafts_fingerprints"),
+        CheckConstraint("jsonb_typeof(document) = 'object' AND octet_length(document::text) <= 1048576", name="ck_investigation_drafts_document"),
+        CheckConstraint("status IN ('pending_review', 'approved', 'rejected')", name="ck_investigation_drafts_status"),
+        CheckConstraint(
+            "(status = 'pending_review' AND reviewed_at IS NULL AND reviewed_by IS NULL AND review_note IS NULL) OR "
+            "(status IN ('approved', 'rejected') AND reviewed_at IS NOT NULL AND reviewed_by IS NOT NULL AND review_note IS NOT NULL "
+            "AND length(trim(reviewed_by)) BETWEEN 1 AND 100 AND length(trim(review_note)) BETWEEN 1 AND 1000)",
+            name="ck_investigation_drafts_review",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    pipeline_run_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("pipeline_runs.id", name="fk_investigation_drafts_run", ondelete="CASCADE"), index=True,
+    )
+    content_fingerprint: Mapped[str] = mapped_column(String(64))
+    evidence_fingerprint: Mapped[str] = mapped_column(String(64))
+    document: Mapped[dict] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(20), server_default="pending_review")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_by: Mapped[str | None] = mapped_column(String(100))
+    review_note: Mapped[str | None] = mapped_column(Text)
