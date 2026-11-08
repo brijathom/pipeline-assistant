@@ -533,6 +533,12 @@ a 45-second timeout, fixed Google endpoint, and one attempt; ADK allows one
 model call. There are no repair calls or automatic retries. These bounds limit
 work but are not a currency-based spending cap.
 
+Reasoning effort is explicitly `low` for this bounded excerpt analysis rather
+than relying on the model default. Gemini 3.8 Flash supports this setting; see
+Google's [thinking controls](https://ai.google.dev/gemini-api/docs/latest-model).
+This is a latency/quality trade-off, not a guarantee against provider timeouts.
+Alternative `AI_MODEL` values must also support the `low` thinking level.
+
 ADK requests structured output using Gemini's `response_json_schema` option;
 the older `response_schema` format rejects our `additionalProperties` constraint.
 A small provider schema translates the numeric report-version constraint;
@@ -549,7 +555,7 @@ For HTTP 429, check the project's free-tier quota in AI Studio. For HTTP 503 or
 The command releases the database connection before generation and rechecks the
 evidence fingerprint afterward. If evidence changed, no draft is written. A
 successful run creates a uniquely named JSON file under ignored `backend/.drafts/`,
-containing `pending_review` status, model/prompt metadata, evidence fingerprint,
+containing `pending_review` status, model/prompt/thinking-level metadata, evidence fingerprint,
 snapshot, and report. Existing files and public database reports are not replaced.
 Review the draft in your editor for factual claims, citations, sensitive values,
 and recommendations. Approval and publication are not implemented in this slice;
@@ -560,6 +566,11 @@ with mocked HTTP. They cover output validation, invented citations, provider
 failure, timeout cancellation, prompt/response caps, and preservation of public
 reports. No credentials or paid calls are needed for these tests. A live provider
 smoke test and evaluation of model quality remain outstanding.
+
+Live verification on 8 November 2026 reached the configured provider but returned
+HTTP 504 with both default and explicit `low` reasoning effort. No AI draft was
+saved. The mocked tests do not establish live availability or report quality;
+further evaluation needs a successful provider response.
 
 ## Test
 

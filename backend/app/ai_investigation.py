@@ -18,6 +18,7 @@ MAX_PROMPT_BYTES = 65_536
 MAX_RESPONSE_BYTES = 131_072
 GENERATION_TIMEOUT_SECONDS = 60
 PROMPT_VERSION = "investigation-v1"
+THINKING_LEVEL = "low"
 APP_NAME = "pipeline_investigation"
 _PROVIDER_ERRORS = {
     400: "Gemini rejected the request (HTTP 400). Check model settings and the report schema. No draft was saved.",
@@ -78,6 +79,7 @@ async def _run_once(model: "BaseLlm", payload: str) -> str:
         on_model_error_callback=safe_model_error,
         generate_content_config=types.GenerateContentConfig(
             temperature=0, max_output_tokens=8192, automatic_continuation=False,
+            thinking_config=types.ThinkingConfig(thinking_level=THINKING_LEVEL),
             # The older response_schema format rejects additionalProperties.
             response_mime_type="application/json",
             response_json_schema=_ProviderReport.model_json_schema(),

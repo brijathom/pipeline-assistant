@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.ai_investigation import AIGenerationError, PROMPT_VERSION, generate_ai_report
+from app.ai_investigation import AIGenerationError, PROMPT_VERSION, THINKING_LEVEL, generate_ai_report
 from app.config import get_settings
 from app.database import get_engine
 from app.investigate_run import InvestigationError, parse_run_id
@@ -40,6 +40,7 @@ def draft_investigation(run_id: int) -> Path:
     document = {
         "status": "pending_review", "generation_method": "google-adk-v1", "model": settings.ai_model,
         "prompt_version": PROMPT_VERSION, "generated_at": datetime.now(timezone.utc).isoformat(),
+        "thinking_level": THINKING_LEVEL,
         "evidence_fingerprint": evidence_fingerprint(bundle), "evidence_snapshot": bundle.model_dump(mode="json"),
         "report": report.model_dump(mode="json"),
     }

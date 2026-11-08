@@ -53,6 +53,7 @@ def test_private_draft_does_not_replace_public_report_or_hold_database_connectio
     assert document["status"] == "pending_review"
     assert document["generation_method"] == "google-adk-v1"
     assert document["model"] == "gemini-3.8-flash" and document["prompt_version"]
+    assert document["thinking_level"] == "low"
     assert document["report"]["findings"][0]["citation"]["source_line"] == 6
     assert "fake-api-key" not in path.read_text(encoding="utf-8")
     db_session.expire_all()

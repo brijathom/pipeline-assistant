@@ -68,6 +68,7 @@ def test_real_adk_runner_uses_one_call_structured_output_and_no_tools(evidence: 
     assert not request.config.tools
     assert request.config.max_output_tokens == 8192
     assert request.config.automatic_continuation is False
+    assert request.config.thinking_config.thinking_level == types.ThinkingLevel.LOW
     user = next(content for content in request.contents if content.role == "user")
     assert json.loads(user.parts[0].text)["jobs"][0]["lines"][0]["source_line"] == 6
 
@@ -161,6 +162,7 @@ def test_real_gemini_client_uses_fixed_endpoint_and_one_request_without_network(
         body = json.loads(request.content)
         assert not body.get("tools")
         assert body["generationConfig"]["maxOutputTokens"] == 8192
+        assert body["generationConfig"]["thinkingConfig"]["thinking_level"] == "LOW"
         assert body["generationConfig"]["responseMimeType"] == "application/json"
         assert "responseSchema" not in body["generationConfig"]
         schema = body["generationConfig"]["responseJsonSchema"]
