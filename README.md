@@ -335,12 +335,42 @@ Job and step timestamps remain source values. Workflow completion times are not
 inferred from job completion times. The importer does not retrieve logs. Open
 the matching run in the dashboard to explore its stored jobs and steps.
 
+### Log processing foundation
+
+`backend/app/log_processing.py` provides a pure function, `process_log`, for
+preparing evidence before persistence or display. It accepts complete UTF-8 log
+bytes up to 1 MiB, normalizes newlines, removes terminal controls, and masks
+common credential patterns. These include GitHub token prefixes, JWTs, private
+key blocks, authorization values, URL credentials, and sensitive assignments.
+Sensitive assignments conservatively mask the remainder of their line.
+
+Redaction runs on the complete bounded input before selecting or shortening an
+excerpt, preserving context such as a private-key header outside the selected
+lines. Oversized or invalid UTF-8 input is rejected with errors that omit log
+contents. A future downloader must enforce the input cap while receiving bytes.
+
+Excerpts contain at most 100 lines and 16 KiB of joined UTF-8 text, including
+newline separators and truncation markers. Each line retains its one-based
+source line number. Metadata reports the source line count, whether content was
+omitted, and whether redaction patterns matched. Callers can reduce the limits.
+
+Pattern matching cannot identify every secret, including arbitrary unlabelled
+values. It is not proof that output is safe to publish; use curated evidence for
+the public demo or an AI provider. This foundation uses synthetic tests only;
+log retrieval, persistence, API responses, and display are still to come.
+
 ## Test
 
 From `backend`:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
+```
+
+To run just the synthetic log-processing tests without a database:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_log_processing.py -q
 ```
 
 Without `TEST_DATABASE_URL`, PostgreSQL integration tests are skipped; the health
